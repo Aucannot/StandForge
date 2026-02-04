@@ -1,0 +1,276 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+@config "../tailwind.config.js";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Minimal: warm canvas + graphite text + calm teal accent */
+    --background: 36 33% 97%;
+    --foreground: 220 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 12%;
+    --primary: 184 52% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 22% 95%;
+    --secondary-foreground: 220 20% 12%;
+    --muted: 210 22% 94%;
+    --muted-foreground: 215 12% 46%;
+    --accent: 210 22% 95%;
+    --accent-foreground: 220 20% 12%;
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 18% 88%;
+    --input: 210 18% 88%;
+    --ring: 184 52% 36%;
+    --radius: 1rem;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 12px 30px rgba(15, 23, 42, 0.08);
+    --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.12);
+    --font-sans: "Manrope", "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-display: "Space Grotesk", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .dark {
+    --background: 220 22% 8%;
+    --foreground: 210 20% 94%;
+    --card: 220 20% 10%;
+    --card-foreground: 210 20% 94%;
+    --primary: 184 55% 45%;
+    --primary-foreground: 220 22% 8%;
+    --secondary: 220 16% 14%;
+    --secondary-foreground: 210 20% 94%;
+    --muted: 220 16% 14%;
+    --muted-foreground: 215 14% 65%;
+    --accent: 220 16% 14%;
+    --accent-foreground: 210 20% 94%;
+    --destructive: 0 60% 38%;
+    --destructive-foreground: 210 20% 94%;
+    --border: 220 16% 20%;
+    --input: 220 16% 18%;
+    --ring: 184 55% 45%;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  html {
+    @apply overflow-hidden;
+    height: 100%;
+  }
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    height: 100%;
+    overflow: hidden;
+  }
+}
+
+#root {
+  height: 100%;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.hero-time {
+  font-size: clamp(64px, 10vw, 120px);
+  line-height: 0.95;
+}
+
+.app-shell {
+  position: relative;
+  background:
+    radial-gradient(900px circle at 12% -10%, rgba(14, 116, 144, 0.12), transparent 60%),
+    radial-gradient(900px circle at 90% 0%, rgba(16, 185, 129, 0.1), transparent 55%),
+    linear-gradient(180deg, #f7f5f0 0%, #f1f4f8 100%);
+}
+
+.dark .app-shell {
+  background:
+    radial-gradient(900px circle at 12% -10%, rgba(14, 116, 144, 0.25), transparent 60%),
+    radial-gradient(900px circle at 90% 0%, rgba(16, 185, 129, 0.2), transparent 55%),
+    linear-gradient(180deg, #0b0f14 0%, #0f1720 100%);
+}
+
+.app-panel {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(16px);
+}
+
+.dark .app-panel {
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+body.is-floating {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+body.is-floating #root {
+  background: transparent;
+}
+
+html.is-floating {
+  background: transparent !important;
+}
+
+.floating-shell {
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 6px;
+}
+
+.floating-card {
+  width: 100%;
+  height: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, rgba(248, 249, 251, 0.95), rgba(236, 238, 242, 0.92));
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  backdrop-filter: blur(22px);
+  overflow: hidden;
+}
+
+.dark .floating-card {
+  background: linear-gradient(180deg, rgba(18, 22, 28, 0.9), rgba(12, 15, 20, 0.88));
+  border-color: rgba(148, 163, 184, 0.16);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.floating-content {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.floating-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.floating-brand {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: hsl(var(--muted-foreground));
+}
+
+.floating-time {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: hsl(var(--foreground));
+}
+
+.floating-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  text-align: right;
+}
+
+.floating-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  color: hsl(var(--muted-foreground));
+}
+
+.floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.floating-btn {
+  height: 28px;
+  width: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.88);
+  color: hsl(var(--foreground));
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.floating-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
+}
+
+.floating-btn:active {
+  transform: translateY(0);
+}
+
+.dark .floating-btn {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.55);
+  color: hsl(var(--foreground));
+}
+
+.dark .floating-btn:hover {
+  background: rgba(15, 23, 42, 0.7);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out both;
+}
+
+.anim-delay-1 {
+  animation-delay: 0.08s;
+}
+
+.anim-delay-2 {
+  animation-delay: 0.16s;
+}
