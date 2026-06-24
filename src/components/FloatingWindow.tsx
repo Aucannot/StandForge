@@ -4,10 +4,12 @@ import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo
 import {
   Armchair,
   BarChart3,
+  Bell,
   Check,
   ChevronDown,
   Clock3,
   Pause,
+  Palette,
   Play,
   RotateCcw,
   Settings2,
@@ -22,6 +24,7 @@ import { useConfigStore } from '../stores/useConfigStore';
 import { useTimerStore } from '../stores/useTimerStore';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
+import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
 const NON_DRAGGABLE_SELECTOR = [
@@ -147,6 +150,8 @@ export function FloatingWindow() {
   }, [isExpanded, loadTodayStats, status]);
 
   const safeRemaining = Math.max(0, remainingSeconds);
+  const uiSkin = config?.ui_skin ?? 'classic';
+  const notificationsEnabled = config?.notifications_enabled ?? true;
   const isIdle = status === 'idle';
   const isPaused = status === 'paused';
   const isStandPrompt = status === 'stand_pending' || status === 'snoozed';
@@ -237,10 +242,16 @@ export function FloatingWindow() {
         ? '我已坐下'
         : isPaused
           ? '继续'
-          : '暂停';
+      : '暂停';
 
   return (
-    <div className={`floating-shell ${isExpanded ? 'floating-shell-expanded' : ''}`}>
+    <div
+      className={[
+        'floating-shell',
+        `floating-skin-${uiSkin.replace('_', '-')}`,
+        isExpanded ? 'floating-shell-expanded' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <main
         className={`floating-card ${isExpanded ? 'floating-card-expanded' : ''}`}
         onPointerDown={handleWindowDragStart}
@@ -388,6 +399,50 @@ export function FloatingWindow() {
 
               <TabsContent value="settings" className="floating-tab-content">
                 <div className="floating-section">
+                  <div className="floating-setting-row floating-toggle-setting">
+                    <div className="floating-setting-copy">
+                      <Bell className="h-4 w-4 text-primary" />
+                      <div>
+                        <p>系统通知</p>
+                        <span>站立提醒和坐下提醒</span>
+                      </div>
+                    </div>
+                    <Switch
+                      data-no-window-drag
+                      checked={notificationsEnabled}
+                      onCheckedChange={(checked) => void updateConfig({ notifications_enabled: checked })}
+                      aria-label="系统通知"
+                    />
+                  </div>
+
+                  <div className="floating-setting-row floating-skin-row">
+                    <div className="floating-setting-copy">
+                      <Palette className="h-4 w-4 text-primary" />
+                      <div>
+                        <p>外观</p>
+                        <span>浮窗皮肤</span>
+                      </div>
+                    </div>
+                    <div className="floating-skin-options" data-no-window-drag>
+                      <button
+                        type="button"
+                        className={`floating-skin-option ${uiSkin === 'classic' ? 'is-active' : ''}`}
+                        onClick={() => void updateConfig({ ui_skin: 'classic' })}
+                        aria-pressed={uiSkin === 'classic'}
+                      >
+                        经典
+                      </button>
+                      <button
+                        type="button"
+                        className={`floating-skin-option ${uiSkin === 'liquid_glass' ? 'is-active' : ''}`}
+                        onClick={() => void updateConfig({ ui_skin: 'liquid_glass' })}
+                        aria-pressed={uiSkin === 'liquid_glass'}
+                      >
+                        液态玻璃
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="floating-setting-row">
                     <div className="floating-setting-label">
                       <span>屏幕使用</span>

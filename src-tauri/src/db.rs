@@ -54,10 +54,22 @@ pub fn init_db() -> Result<()> {
             sound_enabled INTEGER NOT NULL DEFAULT 1,
             auto_end_enabled INTEGER NOT NULL DEFAULT 0,
             auto_end_after_sec INTEGER NOT NULL DEFAULT 3600,
+            ui_skin TEXT NOT NULL DEFAULT 'classic',
             last_updated_at TEXT NOT NULL
         )",
         [],
     )?;
+
+    let mut stmt = conn.prepare("PRAGMA table_info(cycle_config)")?;
+    let column_names = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>>>()?;
+    if !column_names.iter().any(|name| name == "ui_skin") {
+        conn.execute(
+            "ALTER TABLE cycle_config ADD COLUMN ui_skin TEXT NOT NULL DEFAULT 'classic'",
+            [],
+        )?;
+    }
 
     // Create timer_state_persist table
     conn.execute(
@@ -265,7 +277,7 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
     // Try to get existing config
     let mut stmt = conn.prepare(
         "SELECT user_id, sit_minutes, stand_minutes, notifications_enabled,
-                sound_enabled, auto_end_enabled, auto_end_after_sec, last_updated_at
+                sound_enabled, auto_end_enabled, auto_end_after_sec, ui_skin, last_updated_at
          FROM cycle_config WHERE user_id = ?1"
     )?;
 
@@ -278,7 +290,8 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
             sound_enabled: row.get(4)?,
             auto_end_enabled: row.get(5)?,
             auto_end_after_sec: row.get(6)?,
-            last_updated_at: row.get(7)?,
+            ui_skin: row.get(7)?,
+            last_updated_at: row.get(8)?,
         })
     }) {
         return Ok(row);
@@ -293,14 +306,15 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
         sound_enabled: true,
         auto_end_enabled: false,
         auto_end_after_sec: 3600,
+        ui_skin: "classic".to_string(),
         last_updated_at: now.to_rfc3339(),
     };
 
     conn.execute(
         "INSERT INTO cycle_config (
             user_id, sit_minutes, stand_minutes, notifications_enabled,
-            sound_enabled, auto_end_enabled, auto_end_after_sec, last_updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            sound_enabled, auto_end_enabled, auto_end_after_sec, ui_skin, last_updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             user_id,
             config.sit_minutes,
@@ -309,6 +323,7 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
             config.sound_enabled,
             config.auto_end_enabled,
             config.auto_end_after_sec,
+            &config.ui_skin,
             now.to_rfc3339(),
         ],
     )?;
@@ -324,8 +339,8 @@ pub fn update_config(config: &CycleConfig) -> Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO cycle_config (
             user_id, sit_minutes, stand_minutes, notifications_enabled,
-            sound_enabled, auto_end_enabled, auto_end_after_sec, last_updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            sound_enabled, auto_end_enabled, auto_end_after_sec, ui_skin, last_updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             &config.user_id,
             config.sit_minutes,
@@ -334,6 +349,7 @@ pub fn update_config(config: &CycleConfig) -> Result<()> {
             config.sound_enabled,
             config.auto_end_enabled,
             config.auto_end_after_sec,
+            &config.ui_skin,
             now,
         ],
     )?;

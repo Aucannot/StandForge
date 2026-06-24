@@ -35,6 +35,7 @@ export interface CycleConfig {
   sound_enabled: boolean;
   auto_end_enabled: boolean;
   auto_end_after_sec: number;
+  ui_skin: 'classic' | 'liquid_glass';
   last_updated_at: string;
 }
 

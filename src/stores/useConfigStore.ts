@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { DEFAULT_USER_ID } from '../lib/constants';
 
+export type UiSkin = 'classic' | 'liquid_glass';
+
 export interface CycleConfig {
   user_id: string;
   sit_minutes: number;
@@ -10,6 +12,7 @@ export interface CycleConfig {
   sound_enabled: boolean;
   auto_end_enabled: boolean;
   auto_end_after_sec: number;
+  ui_skin: UiSkin;
   last_updated_at: string;
 }
 

@@ -26,5 +26,6 @@ pub struct CycleConfig {
     pub sound_enabled: bool,
     pub auto_end_enabled: bool,
     pub auto_end_after_sec: i32,
+    pub ui_skin: String,
     pub last_updated_at: String,
 }

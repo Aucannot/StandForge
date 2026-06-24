@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
+use std::process::Command;
 use tauri::{Emitter, Manager};
 use chrono::DateTime;
+use crate::db;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum TimerEvent {
@@ -250,6 +252,10 @@ impl StandTimer {
             match state {
                 TimerState::Sitting => {
                     self.transition_to_stand_pending();
+                    show_timer_notification(
+                        "该站一会儿",
+                        "屏幕使用时间已到，起来活动一下。",
+                    );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "sit",
                         "next_phase": "stand"
@@ -257,6 +263,10 @@ impl StandTimer {
                     show_floating_window(app);
                 }
                 TimerState::Standing => {
+                    show_timer_notification(
+                        "可以坐下了",
+                        "这轮站立已经完成，可以回到屏幕前。",
+                    );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "stand",
                         "next_phase": "sit"
@@ -266,6 +276,10 @@ impl StandTimer {
                 TimerState::Snoozed => {
                     // Return to pending state after snooze
                     self.transition_to_stand_pending();
+                    show_timer_notification(
+                        "延后时间到了",
+                        "现在该站起来活动一下。",
+                    );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "snooze",
                         "next_phase": "stand"
@@ -278,6 +292,41 @@ impl StandTimer {
 
         true
     }
+}
+
+fn show_timer_notification(subtitle: &str, body: &str) {
+    let Ok(config) = db::get_or_create_config("default_user") else {
+        return;
+    };
+    if !config.notifications_enabled {
+        return;
+    }
+
+    show_macos_notification("StandForge", subtitle, body, config.sound_enabled);
+}
+
+#[cfg(target_os = "macos")]
+fn show_macos_notification(title: &str, subtitle: &str, body: &str, sound_enabled: bool) {
+    let sound_clause = if sound_enabled { " sound name \"Glass\"" } else { "" };
+    let script = format!(
+        "display notification \"{}\" with title \"{}\" subtitle \"{}\"{}",
+        escape_applescript_text(body),
+        escape_applescript_text(title),
+        escape_applescript_text(subtitle),
+        sound_clause,
+    );
+
+    let _ = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .spawn();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_macos_notification(_title: &str, _subtitle: &str, _body: &str, _sound_enabled: bool) {}
+
+fn escape_applescript_text(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn show_floating_window(app: &tauri::AppHandle) {
