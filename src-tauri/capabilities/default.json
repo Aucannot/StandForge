@@ -5,6 +5,7 @@
   "windows": ["floating"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "core:window:allow-set-size",
     "opener:default"
   ]

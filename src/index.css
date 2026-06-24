@@ -202,6 +202,12 @@ html.is-floating {
   border: 1px solid rgba(15, 23, 42, 0.1);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
   backdrop-filter: blur(24px);
+  cursor: grab;
+  user-select: none;
+}
+
+.floating-card:active {
+  cursor: grabbing;
 }
 
 .floating-card-expanded {
@@ -293,6 +299,7 @@ html.is-floating {
   justify-content: center;
   color: hsl(var(--foreground));
   background: rgba(15, 23, 42, 0.06);
+  cursor: pointer;
   transition: background-color 0.15s ease, transform 0.15s ease;
 }
 
@@ -353,6 +360,7 @@ html.is-floating {
   border-radius: 999px;
   padding: 0 10px;
   font-size: 12px;
+  cursor: pointer;
 }
 
 .floating-tab-content {
@@ -434,6 +442,7 @@ html.is-floating {
   border-color: rgba(15, 23, 42, 0.1);
   background: rgba(255, 255, 255, 0.66);
   color: hsl(var(--foreground) / 0.82);
+  cursor: pointer;
 }
 
 .floating-chip-button:hover {
@@ -477,6 +486,10 @@ html.is-floating {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: hsl(var(--foreground));
+}
+
+.floating-setting-row [data-no-window-drag] {
+  cursor: pointer;
 }
 
 .floating-note {

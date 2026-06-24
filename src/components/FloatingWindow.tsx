@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Armchair,
   BarChart3,
@@ -22,6 +23,19 @@ import { useTimerStore } from '../stores/useTimerStore';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+
+const NON_DRAGGABLE_SELECTOR = [
+  'a',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  '[contenteditable="true"]',
+  '[data-no-window-drag]',
+  '[role="button"]',
+  '[role="slider"]',
+  '[role="tab"]',
+].join(',');
 
 function formatTime(seconds: number) {
   const safeSeconds = Math.max(0, seconds);
@@ -174,6 +188,26 @@ export function FloatingWindow() {
     [updateConfig],
   );
 
+  const handleWindowDragStart = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Element && target.closest(NON_DRAGGABLE_SELECTOR)) {
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      void getCurrentWindow().startDragging().catch(() => {
+        // Browser preview cannot drag a native Tauri window.
+      });
+    } catch {
+      // Browser preview has no Tauri window metadata.
+    }
+  }, []);
+
   const handlePrimaryAction = async () => {
     if (isIdle) {
       await handleDurationsCommit(sitMinutes, standMinutes);
@@ -207,9 +241,12 @@ export function FloatingWindow() {
 
   return (
     <div className={`floating-shell ${isExpanded ? 'floating-shell-expanded' : ''}`}>
-      <main className={`floating-card ${isExpanded ? 'floating-card-expanded' : ''}`}>
-        <header className="floating-header" data-tauri-drag-region>
-          <div className="floating-drag" data-tauri-drag-region>
+      <main
+        className={`floating-card ${isExpanded ? 'floating-card-expanded' : ''}`}
+        onPointerDown={handleWindowDragStart}
+      >
+        <header className="floating-header">
+          <div className="floating-drag">
             <p className="floating-kicker">StandForge</p>
             <p className="floating-time">{formatTime(isIdle ? sitMinutes * 60 : safeRemaining)}</p>
           </div>
@@ -357,6 +394,7 @@ export function FloatingWindow() {
                       <strong>{sitMinutes} 分钟</strong>
                     </div>
                     <Slider
+                      data-no-window-drag
                       aria-label="屏幕使用时长"
                       value={[sitMinutes]}
                       min={5}
@@ -373,6 +411,7 @@ export function FloatingWindow() {
                       <strong>{standMinutes} 分钟</strong>
                     </div>
                     <Slider
+                      data-no-window-drag
                       aria-label="站立时长"
                       value={[standMinutes]}
                       min={3}
