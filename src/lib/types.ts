@@ -58,6 +58,15 @@ export interface DailyStats {
   targetMinutes: number;
 }
 
+export interface TodayStats {
+  total_duration_sec: number;
+  session_count: number;
+  snooze_count: number;
+  snooze_total_sec: number;
+  completion_rate: number;
+  target_stand_sec: number;
+}
+
 export interface WeeklyStats {
   days: DailyStats[];
   totalDurationSec: number;

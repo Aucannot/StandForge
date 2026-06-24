@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { DEFAULT_USER_ID } from '../lib/constants';
+import { getDeviceId } from '../lib/utils';
 
 export type TimerState = 'idle' | 'sitting' | 'stand_pending' | 'standing' | 'snoozed' | 'paused';
 
@@ -31,7 +33,7 @@ interface TimerStatePayload {
   current_phase: 'sit' | 'stand';
   remaining_seconds: number;
   total_phase_seconds: number;
-  current_session_id: string | null;
+  current_session_id?: string | null;
 }
 
 function normalizeStatus(status: string): TimerState {
@@ -51,24 +53,18 @@ function normalizeStatus(status: string): TimerState {
 }
 
 function applyState(setter: (partial: Partial<TimerStore>) => void, state: TimerStatePayload) {
-  setter({
+  const nextState: Partial<TimerStore> = {
     status: normalizeStatus(state.status),
     currentPhase: state.current_phase,
     remainingSeconds: state.remaining_seconds,
     totalPhaseSeconds: state.total_phase_seconds,
-    currentSessionId: state.current_session_id,
-  });
-}
+  };
 
-const USER_ID = 'default_user';
-// Generate a device ID stored in localStorage
-function getDeviceId(): string {
-  let deviceId = localStorage.getItem('standforge_device_id');
-  if (!deviceId) {
-    deviceId = crypto.randomUUID();
-    localStorage.setItem('standforge_device_id', deviceId);
+  if ('current_session_id' in state) {
+    nextState.currentSessionId = state.current_session_id ?? null;
   }
-  return deviceId;
+
+  setter(nextState);
 }
 
 export const useTimerStore = create<TimerStore>((set, get) => ({
@@ -82,7 +78,7 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   // Actions
   startTimer: async () => {
     const sessionId = await invoke<string>('start_timer', {
-      userId: USER_ID,
+      userId: DEFAULT_USER_ID,
       deviceId: getDeviceId(),
     });
     try {
@@ -127,25 +123,17 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
 
   confirmStand: async () => {
     await invoke('confirm_stand');
-    set({
-      status: 'standing',
-      currentPhase: 'stand',
-    });
+    await get().syncState();
   },
 
   confirmSit: async () => {
     await invoke('confirm_sit');
-    set({
-      status: 'idle',
-      currentSessionId: null,
-    });
+    await get().syncState();
   },
 
   snooze: async (minutes: number) => {
     await invoke('snooze_stand', { snoozeMinutes: minutes });
-    set({
-      status: 'snoozed',
-    });
+    await get().syncState();
   },
 
   syncState: async () => {
@@ -162,16 +150,25 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   },
 }));
 
+let listenersStarted = false;
+
 // Set up listener for timer events
 export function setupTimerListeners() {
+  if (listenersStarted) {
+    return;
+  }
+  listenersStarted = true;
+
   // Listen for timer tick events from Rust backend
-  listen<{ status: string; current_phase: string; remaining_seconds: number; total_phase_seconds: number }>(
+  listen<TimerStatePayload>(
     'timer-tick',
     (event) => {
       const store = useTimerStore.getState();
       store.hydrateState(event.payload);
     }
-  );
+  ).catch(() => {
+    listenersStarted = false;
+  });
 
   // Listen for phase complete events
   listen<{ phase: string; next_phase: string }>('phase-complete', (event) => {
@@ -193,5 +190,7 @@ export function setupTimerListeners() {
         current_session_id: store.currentSessionId,
       });
     }
+  }).catch(() => {
+    listenersStarted = false;
   });
 }

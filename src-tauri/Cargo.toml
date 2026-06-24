@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "standforge"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "A Tauri desktop timer for sitting and standing work cycles"
+authors = ["StandForge"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -25,4 +25,3 @@ serde_json = "1"
 rusqlite = { version = "0.30", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-

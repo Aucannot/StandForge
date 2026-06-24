@@ -2,32 +2,21 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "StandForge",
   "version": "0.1.0",
-  "identifier": "com.standforge.app",
+  "identifier": "com.standforge.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:11451",
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "StandForge",
-        "label": "main",
-        "width": 500,
-        "height": 600,
-        "resizable": true,
-        "center": true,
-        "titleBarStyle": "Visible",
-        "hiddenTitle": false,
-        "skipTaskbar": false
-      },
-      {
-        "title": "StandForge Timer",
+        "title": "StandForge Floating Timer",
         "label": "floating",
-        "width": 360,
-        "height": 84,
-        "resizable": false,
+        "width": 340,
+        "height": 92,
+        "resizable": true,
         "center": false,
         "x": 24,
         "y": 80,
@@ -36,10 +25,10 @@
         "backgroundColor": [0, 0, 0, 0],
         "alwaysOnTop": true,
         "visibleOnAllWorkspaces": true,
-        "skipTaskbar": true,
+        "skipTaskbar": false,
         "visible": true,
-        "focus": false,
-        "shadow": false
+        "focus": true,
+        "shadow": true
       }
     ],
     "security": {
@@ -50,7 +39,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

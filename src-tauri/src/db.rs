@@ -4,8 +4,15 @@ use uuid::Uuid;
 use crate::models::{StandSession, CycleConfig};
 
 pub fn get_db_path() -> String {
-    // Use a simple path for now - in a real app we'd use the proper app data dir
-    let mut path = std::path::PathBuf::from(".");
+    let mut path = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|home| home.join("Library").join("Application Support").join("StandForge"))
+        .unwrap_or_else(|| std::env::temp_dir().join("StandForge"));
+
+    if let Err(err) = std::fs::create_dir_all(&path) {
+        eprintln!("failed to create StandForge data directory: {err}");
+    }
+
     path.push("standforge.db");
     path.to_string_lossy().to_string()
 }
@@ -14,8 +21,8 @@ pub fn init_db() -> Result<()> {
     let db_path = get_db_path();
     let conn = Connection::open(&db_path)?;
 
-    // Enable WAL mode for better concurrent access
-    conn.execute("PRAGMA journal_mode = WAL", [])?;
+    // journal_mode returns the selected mode, so consume that row instead of using execute().
+    let _: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
 
     // Create stand_sessions table
     conn.execute(
@@ -129,13 +136,17 @@ pub fn update_session_end(
     let mut stmt = conn.prepare(
         "SELECT actual_stand_start_at FROM stand_sessions WHERE id = ?1"
     )?;
-    let start_str: String = stmt.query_row(&[session_id], |row| row.get(0))?;
+    let start_str: Option<String> = stmt.query_row(&[session_id], |row| row.get(0))?;
 
-    let duration = if let Ok(start_dt) = DateTime::parse_from_rfc3339(&start_str) {
-        let duration = now.signed_duration_since(start_dt)
-            .num_seconds()
-            .max(0);
-        Some(duration)
+    let duration = if let Some(start_str) = start_str {
+        if let Ok(start_dt) = DateTime::parse_from_rfc3339(&start_str) {
+            let duration = now.signed_duration_since(start_dt)
+                .num_seconds()
+                .max(0);
+            Some(duration)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -216,7 +227,7 @@ pub fn get_today_sessions(user_id: &str) -> Result<Vec<StandSession>> {
                 actual_stand_start_at, start_source, end_at, end_source,
                 duration_sec, snooze_count, snooze_total_sec, created_at, updated_at
          FROM stand_sessions
-         WHERE user_id = ?1 AND date(end_at) = date('now')
+         WHERE user_id = ?1 AND date(end_at, 'localtime') = date('now', 'localtime')
          ORDER BY end_at DESC"
     )?;
 
