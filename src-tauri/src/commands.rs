@@ -230,7 +230,7 @@ pub fn set_floating_expanded(app: tauri::AppHandle, expanded: bool) -> Result<()
     let window = app
         .get_webview_window("floating")
         .ok_or_else(|| "floating window not found".to_string())?;
-    let (width, height) = if expanded { (420.0, 560.0) } else { (340.0, 92.0) };
+    let (width, height) = if expanded { (340.0, 520.0) } else { (340.0, 92.0) };
 
     window
         .set_size(tauri::LogicalSize::new(width, height))
