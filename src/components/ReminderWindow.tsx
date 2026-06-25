@@ -85,7 +85,7 @@ export function ReminderWindow() {
               <Icon className="h-5 w-5" strokeWidth={2.2} />
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground">StandForge reminder</p>
+              <p className="text-xs font-medium text-muted-foreground">StandForge 提醒</p>
               <h1 className="mt-1 text-2xl font-semibold text-foreground">{copy.title}</h1>
             </div>
           </div>

@@ -253,8 +253,9 @@ impl StandTimer {
                 TimerState::Sitting => {
                     self.transition_to_stand_pending();
                     show_timer_notification(
-                        "该站一会儿",
-                        "屏幕使用时间已到，起来活动一下。",
+                        "站立提醒",
+                        "屏幕使用时间已到",
+                        "起来活动一下。",
                     );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "sit",
@@ -264,8 +265,9 @@ impl StandTimer {
                 }
                 TimerState::Standing => {
                     show_timer_notification(
-                        "可以坐下了",
-                        "这轮站立已经完成，可以回到屏幕前。",
+                        "坐下提醒",
+                        "本轮站立完成",
+                        "可以回到屏幕前。",
                     );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "stand",
@@ -277,8 +279,9 @@ impl StandTimer {
                     // Return to pending state after snooze
                     self.transition_to_stand_pending();
                     show_timer_notification(
+                        "站立提醒",
                         "延后时间到了",
-                        "现在该站起来活动一下。",
+                        "现在起来活动一下。",
                     );
                     app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "snooze",
@@ -294,7 +297,7 @@ impl StandTimer {
     }
 }
 
-fn show_timer_notification(subtitle: &str, body: &str) {
+fn show_timer_notification(title: &str, subtitle: &str, body: &str) {
     let Ok(config) = db::get_or_create_config("default_user") else {
         return;
     };
@@ -302,7 +305,7 @@ fn show_timer_notification(subtitle: &str, body: &str) {
         return;
     }
 
-    show_macos_notification("StandForge", subtitle, body, config.sound_enabled);
+    show_macos_notification(title, subtitle, body, config.sound_enabled);
 }
 
 #[cfg(target_os = "macos")]
