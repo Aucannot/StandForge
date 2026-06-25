@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
+.npm-cache/
+.npm-logs/
+native-macos/.build/
+src-tauri/standforge.db*
 
 # Editor directories and files
 .vscode/

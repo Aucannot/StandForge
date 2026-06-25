@@ -35,6 +35,7 @@ export interface CycleConfig {
   sound_enabled: boolean;
   auto_end_enabled: boolean;
   auto_end_after_sec: number;
+  ui_skin: 'classic' | 'liquid_glass';
   last_updated_at: string;
 }
 
@@ -56,6 +57,15 @@ export interface DailyStats {
   sessionCount: number;
   completionRate: number;  // 0-100
   targetMinutes: number;
+}
+
+export interface TodayStats {
+  total_duration_sec: number;
+  session_count: number;
+  snooze_count: number;
+  snooze_total_sec: number;
+  completion_rate: number;
+  target_stand_sec: number;
 }
 
 export interface WeeklyStats {

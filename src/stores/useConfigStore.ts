@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
+import { DEFAULT_USER_ID } from '../lib/constants';
+
+export type UiSkin = 'classic' | 'liquid_glass';
 
 export interface CycleConfig {
   user_id: string;
@@ -9,6 +12,7 @@ export interface CycleConfig {
   sound_enabled: boolean;
   auto_end_enabled: boolean;
   auto_end_after_sec: number;
+  ui_skin: UiSkin;
   last_updated_at: string;
 }
 
@@ -22,8 +26,6 @@ interface ConfigStore {
   updateConfig: (updates: Partial<CycleConfig>) => Promise<void>;
 }
 
-const USER_ID = 'default_user';
-
 export const useConfigStore = create<ConfigStore>((set, get) => ({
   config: null,
   isLoading: false,
@@ -32,7 +34,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
   loadConfig: async () => {
     set({ isLoading: true, error: null });
     try {
-      const config = await invoke<CycleConfig>('get_config', { userId: USER_ID });
+      const config = await invoke<CycleConfig>('get_config', { userId: DEFAULT_USER_ID });
       set({ config, isLoading: false });
     } catch (e) {
       set({ error: String(e), isLoading: false });

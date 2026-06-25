@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
+use std::process::Command;
+use tauri::{Emitter, Manager};
 use chrono::DateTime;
+use crate::db;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum TimerEvent {
@@ -60,11 +62,12 @@ pub struct StandTimer {
     current_phase: Arc<Mutex<TimerPhase>>,
     phase_start: Arc<Mutex<DateTime<chrono::Utc>>>,
     phase_duration_sec: Arc<Mutex<i64>>,
-    sit_duration_sec: i64,
-    stand_duration_sec: i64,
+    sit_duration_sec: Arc<Mutex<i64>>,
+    stand_duration_sec: Arc<Mutex<i64>>,
     current_session_id: Arc<Mutex<Option<String>>>,
     paused_state: Arc<Mutex<Option<TimerState>>>,
     paused_remaining_sec: Arc<Mutex<i64>>,
+    phase_complete_emitted: Arc<Mutex<bool>>,
 }
 
 impl StandTimer {
@@ -74,11 +77,12 @@ impl StandTimer {
             current_phase: Arc::new(Mutex::new(TimerPhase::Sit)),
             phase_start: Arc::new(Mutex::new(chrono::Utc::now())),
             phase_duration_sec: Arc::new(Mutex::new(0)),
-            sit_duration_sec: sit_minutes * 60,
-            stand_duration_sec: stand_minutes * 60,
+            sit_duration_sec: Arc::new(Mutex::new(sit_minutes * 60)),
+            stand_duration_sec: Arc::new(Mutex::new(stand_minutes * 60)),
             current_session_id: Arc::new(Mutex::new(None)),
             paused_state: Arc::new(Mutex::new(None)),
             paused_remaining_sec: Arc::new(Mutex::new(0)),
+            phase_complete_emitted: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -108,14 +112,24 @@ impl StandTimer {
         self.current_session_id.lock().unwrap().clone()
     }
 
+    pub fn set_durations(&self, sit_minutes: i64, stand_minutes: i64) {
+        *self.sit_duration_sec.lock().unwrap() = sit_minutes.max(1) * 60;
+        *self.stand_duration_sec.lock().unwrap() = stand_minutes.max(1) * 60;
+    }
+
     pub fn start_sitting(&self, session_id: String) {
         *self.state.lock().unwrap() = TimerState::Sitting;
         *self.current_phase.lock().unwrap() = TimerPhase::Sit;
         *self.phase_start.lock().unwrap() = chrono::Utc::now();
-        *self.phase_duration_sec.lock().unwrap() = self.sit_duration_sec;
+        *self.phase_duration_sec.lock().unwrap() = *self.sit_duration_sec.lock().unwrap();
         *self.current_session_id.lock().unwrap() = Some(session_id);
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
+    }
+
+    pub fn start_next_sitting(&self, session_id: String) {
+        self.start_sitting(session_id);
     }
 
     pub fn transition_to_stand_pending(&self) {
@@ -126,9 +140,10 @@ impl StandTimer {
         *self.state.lock().unwrap() = TimerState::Standing;
         *self.current_phase.lock().unwrap() = TimerPhase::Stand;
         *self.phase_start.lock().unwrap() = chrono::Utc::now();
-        *self.phase_duration_sec.lock().unwrap() = self.stand_duration_sec;
+        *self.phase_duration_sec.lock().unwrap() = *self.stand_duration_sec.lock().unwrap();
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn confirm_sit(&self) {
@@ -138,6 +153,7 @@ impl StandTimer {
         *self.phase_duration_sec.lock().unwrap() = 0;
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn snooze(&self, snooze_minutes: i64) {
@@ -147,6 +163,7 @@ impl StandTimer {
         *self.state.lock().unwrap() = TimerState::Snoozed;
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn pause(&self) {
@@ -168,6 +185,7 @@ impl StandTimer {
             *self.phase_start.lock().unwrap() = chrono::Utc::now();
             *self.phase_duration_sec.lock().unwrap() = remaining;
             *self.paused_remaining_sec.lock().unwrap() = 0;
+            *self.phase_complete_emitted.lock().unwrap() = false;
         }
     }
 
@@ -178,24 +196,27 @@ impl StandTimer {
         *self.current_session_id.lock().unwrap() = None;
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn switch_to_stand(&self) {
         *self.state.lock().unwrap() = TimerState::Standing;
         *self.current_phase.lock().unwrap() = TimerPhase::Stand;
         *self.phase_start.lock().unwrap() = chrono::Utc::now();
-        *self.phase_duration_sec.lock().unwrap() = self.stand_duration_sec;
+        *self.phase_duration_sec.lock().unwrap() = *self.stand_duration_sec.lock().unwrap();
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn switch_to_sit(&self) {
         *self.state.lock().unwrap() = TimerState::Sitting;
         *self.current_phase.lock().unwrap() = TimerPhase::Sit;
         *self.phase_start.lock().unwrap() = chrono::Utc::now();
-        *self.phase_duration_sec.lock().unwrap() = self.sit_duration_sec;
+        *self.phase_duration_sec.lock().unwrap() = *self.sit_duration_sec.lock().unwrap();
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
+        *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
     pub fn update(&self, app: &tauri::AppHandle) -> bool {
@@ -206,13 +227,14 @@ impl StandTimer {
 
         let remaining = self.get_remaining_seconds();
 
-        // Emit tick event
-        app.emit("timer-tick", serde_json::json!({
+        let timer_state = serde_json::json!({
             "status": state.as_str(),
             "current_phase": self.get_current_phase().as_str(),
             "remaining_seconds": remaining,
             "total_phase_seconds": self.get_total_phase_seconds(),
-        })).ok();
+            "current_session_id": self.get_current_session_id(),
+        });
+        app.emit_to("floating", "timer-tick", timer_state).ok();
 
         if state == TimerState::Paused {
             return true;
@@ -220,32 +242,100 @@ impl StandTimer {
 
         // Check if phase is complete
         if remaining <= 0 {
+            let mut emitted = self.phase_complete_emitted.lock().unwrap();
+            if *emitted {
+                return true;
+            }
+            *emitted = true;
+            drop(emitted);
+
             match state {
                 TimerState::Sitting => {
                     self.transition_to_stand_pending();
-                    app.emit("phase-complete", serde_json::json!({
+                    show_timer_notification(
+                        "站立提醒",
+                        "屏幕使用时间已到",
+                        "起来活动一下。",
+                    );
+                    app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "sit",
                         "next_phase": "stand"
                     })).ok();
+                    show_floating_window(app);
                 }
                 TimerState::Standing => {
-                    app.emit("phase-complete", serde_json::json!({
+                    show_timer_notification(
+                        "坐下提醒",
+                        "本轮站立完成",
+                        "可以回到屏幕前。",
+                    );
+                    app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "stand",
                         "next_phase": "sit"
                     })).ok();
+                    show_floating_window(app);
                 }
                 TimerState::Snoozed => {
                     // Return to pending state after snooze
                     self.transition_to_stand_pending();
-                    app.emit("phase-complete", serde_json::json!({
+                    show_timer_notification(
+                        "站立提醒",
+                        "延后时间到了",
+                        "现在起来活动一下。",
+                    );
+                    app.emit_to("floating", "phase-complete", serde_json::json!({
                         "phase": "snooze",
                         "next_phase": "stand"
                     })).ok();
+                    show_floating_window(app);
                 }
                 _ => {}
             }
         }
 
         true
+    }
+}
+
+fn show_timer_notification(title: &str, subtitle: &str, body: &str) {
+    let Ok(config) = db::get_or_create_config("default_user") else {
+        return;
+    };
+    if !config.notifications_enabled {
+        return;
+    }
+
+    show_macos_notification(title, subtitle, body, config.sound_enabled);
+}
+
+#[cfg(target_os = "macos")]
+fn show_macos_notification(title: &str, subtitle: &str, body: &str, sound_enabled: bool) {
+    let sound_clause = if sound_enabled { " sound name \"Glass\"" } else { "" };
+    let script = format!(
+        "display notification \"{}\" with title \"{}\" subtitle \"{}\"{}",
+        escape_applescript_text(body),
+        escape_applescript_text(title),
+        escape_applescript_text(subtitle),
+        sound_clause,
+    );
+
+    let _ = Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
+        .spawn();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_macos_notification(_title: &str, _subtitle: &str, _body: &str, _sound_enabled: bool) {}
+
+fn escape_applescript_text(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn show_floating_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("floating") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
     }
 }
