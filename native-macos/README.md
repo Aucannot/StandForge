@@ -21,7 +21,7 @@ native-macos/scripts/build-app.sh
 The app bundle is written to:
 
 ```text
-native-macos/.build/app/StandForge Native.app
+native-macos/build/app/StandForge Native.app
 ```
 
 ## Liquid Glass behavior

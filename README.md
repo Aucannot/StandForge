@@ -49,4 +49,4 @@ Build the native macOS `.app` bundle with:
 npm run mac:native:build
 ```
 
-The native app bundle is written to `native-macos/.build/app/StandForge Native.app`.
+The native app bundle is written to `native-macos/build/app/StandForge Native.app`.

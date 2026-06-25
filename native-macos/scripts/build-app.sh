@@ -3,11 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$PROJECT_DIR/.build"
+BUILD_DIR="$PROJECT_DIR/build"
 APP_DIR="$BUILD_DIR/app/StandForge Native.app"
 EXECUTABLE="$BUILD_DIR/release/StandForgeMac"
 
-swift build --package-path "$PROJECT_DIR" -c release
+swift build --package-path "$PROJECT_DIR" --build-path "$BUILD_DIR" -c release
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
