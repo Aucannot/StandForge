@@ -13,6 +13,11 @@ StandForge is a small macOS/Tauri app that runs a background sitting timer and p
 
 ## Development
 
+This repository now has two app implementations:
+
+- **Tauri/React**: the current cross-platform shell with CSS glass styling.
+- **Native macOS**: a SwiftUI/AppKit floating window that uses system Liquid Glass on macOS 26+.
+
 ```bash
 npm install
 npm run dev
@@ -31,3 +36,17 @@ Build the web assets with:
 ```bash
 npm run build
 ```
+
+Run the native macOS Liquid Glass version with:
+
+```bash
+npm run mac:native:run
+```
+
+Build the native macOS `.app` bundle with:
+
+```bash
+npm run mac:native:build
+```
+
+The native app bundle is written to `native-macos/.build/app/StandForge Native.app`.
