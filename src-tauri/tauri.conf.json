@@ -15,7 +15,7 @@
         "title": "StandForge Floating Timer",
         "label": "floating",
         "width": 340,
-        "height": 92,
+        "height": 80,
         "resizable": true,
         "center": false,
         "x": 24,
@@ -23,6 +23,11 @@
         "decorations": false,
         "transparent": true,
         "backgroundColor": [0, 0, 0, 0],
+        "windowEffects": {
+          "effects": ["popover"],
+          "state": "active",
+          "radius": 40
+        },
         "alwaysOnTop": true,
         "visibleOnAllWorkspaces": true,
         "skipTaskbar": false,

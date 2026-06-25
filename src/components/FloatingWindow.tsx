@@ -150,7 +150,7 @@ export function FloatingWindow() {
   }, [isExpanded, loadTodayStats, status]);
 
   const safeRemaining = Math.max(0, remainingSeconds);
-  const uiSkin = config?.ui_skin ?? 'classic';
+  const uiSkin = config?.ui_skin ?? 'liquid_glass';
   const notificationsEnabled = config?.notifications_enabled ?? true;
   const isIdle = status === 'idle';
   const isPaused = status === 'paused';

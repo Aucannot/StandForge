@@ -54,7 +54,7 @@ pub fn init_db() -> Result<()> {
             sound_enabled INTEGER NOT NULL DEFAULT 1,
             auto_end_enabled INTEGER NOT NULL DEFAULT 0,
             auto_end_after_sec INTEGER NOT NULL DEFAULT 3600,
-            ui_skin TEXT NOT NULL DEFAULT 'classic',
+            ui_skin TEXT NOT NULL DEFAULT 'liquid_glass',
             last_updated_at TEXT NOT NULL
         )",
         [],
@@ -66,7 +66,7 @@ pub fn init_db() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     if !column_names.iter().any(|name| name == "ui_skin") {
         conn.execute(
-            "ALTER TABLE cycle_config ADD COLUMN ui_skin TEXT NOT NULL DEFAULT 'classic'",
+            "ALTER TABLE cycle_config ADD COLUMN ui_skin TEXT NOT NULL DEFAULT 'liquid_glass'",
             [],
         )?;
     }
@@ -306,7 +306,7 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
         sound_enabled: true,
         auto_end_enabled: false,
         auto_end_after_sec: 3600,
-        ui_skin: "classic".to_string(),
+        ui_skin: "liquid_glass".to_string(),
         last_updated_at: now.to_rfc3339(),
     };
 
