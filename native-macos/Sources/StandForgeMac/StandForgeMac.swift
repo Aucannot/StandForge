@@ -27,6 +27,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         UNUserNotificationCenter.current().delegate = self
         timerModel.requestNotificationPermission()
         createFloatingWindow()
+        timerModel.startIfNeeded()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -191,6 +192,11 @@ private final class StandForgeTimerModel: ObservableObject {
         }
     }
 
+    func startIfNeeded() {
+        guard phase == .idle else { return }
+        startSitting()
+    }
+
     func stop() {
         timer?.invalidate()
         timer = nil
@@ -331,7 +337,7 @@ private struct FloatingTimerWindow: View {
             .padding(isExpanded ? 10 : 11)
             .frame(width: 340, height: isExpanded ? 520 : 80)
             .standForgeGlass(
-                RoundedRectangle(cornerRadius: isExpanded ? 28 : 26, style: .continuous),
+                RoundedRectangle(cornerRadius: isExpanded ? 20 : 18, style: .continuous),
                 interactive: false
             )
             .animation(.smooth(duration: 0.24), value: isExpanded)
@@ -349,7 +355,7 @@ private struct FloatingTimerWindow: View {
                     .foregroundStyle(.secondary)
 
                 Text(formatTime(model.displaySeconds))
-                    .font(.system(size: 38, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -357,7 +363,7 @@ private struct FloatingTimerWindow: View {
 
             Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .trailing, spacing: 6) {
                 Text(model.phaseLabel)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -573,7 +579,7 @@ private struct FloatingTimerWindow: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(prominent ? .white : .primary)
-                .frame(width: 34, height: 34)
+                .frame(width: 28, height: 28)
                 .contentShape(Circle())
                 .standForgeGlass(Circle(), interactive: true, tint: prominent ? .teal : nil)
         }

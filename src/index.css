@@ -175,9 +175,9 @@ html.is-floating {
 }
 
 .floating-shell {
-  --floating-radius: 26px;
-  --floating-inner-radius: 20px;
-  --floating-control-radius: 18px;
+  --floating-radius: 18px;
+  --floating-inner-radius: 14px;
+  --floating-control-radius: 14px;
   --floating-glass-surface: rgba(255, 255, 255, 0.58);
   --floating-glass-surface-strong: rgba(255, 255, 255, 0.66);
   --floating-glass-subtle: rgba(15, 23, 42, 0.05);
@@ -195,8 +195,8 @@ html.is-floating {
 }
 
 .floating-shell-expanded {
-  --floating-radius: 28px;
-  --floating-control-radius: 20px;
+  --floating-radius: 20px;
+  --floating-control-radius: 16px;
   align-items: stretch;
   padding: 0;
 }

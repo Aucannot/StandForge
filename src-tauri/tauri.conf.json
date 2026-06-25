@@ -26,7 +26,7 @@
         "windowEffects": {
           "effects": ["popover"],
           "state": "active",
-          "radius": 26
+          "radius": 18
         },
         "alwaysOnTop": true,
         "visibleOnAllWorkspaces": true,
