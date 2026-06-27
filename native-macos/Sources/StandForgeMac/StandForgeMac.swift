@@ -516,7 +516,12 @@ private struct FloatingTimerWindow: View {
 
             StandForgeGlassContainer {
                 VStack(spacing: isExpanded ? 12 : 0) {
-                    header(timeSize: timeSize, titleOpacity: titleOpacity, compactProgress: compactProgress)
+                    header(
+                        availableWidth: proxy.size.width - (horizontalPadding * 2),
+                        timeSize: timeSize,
+                        titleOpacity: titleOpacity,
+                        compactProgress: compactProgress
+                    )
                         .frame(height: headerHeight)
 
                     if isExpanded {
@@ -543,56 +548,83 @@ private struct FloatingTimerWindow: View {
         }
     }
 
-    private func header(timeSize: Double, titleOpacity: Double, compactProgress: Double) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+    private func header(
+        availableWidth: Double,
+        timeSize: Double,
+        titleOpacity: Double,
+        compactProgress: Double
+    ) -> some View {
+        let widthProgress = max(0, min(1, (availableWidth - 244) / 92))
+        let buttonSize = 24 + (4 * min(compactProgress, widthProgress))
+        let iconSize = 11.5 + (1.5 * min(compactProgress, widthProgress))
+        let controlSpacing = 4 + (4 * widthProgress)
+        let showSecondaryControls = widthProgress > 0.2
+        let labelText = availableWidth < 284 ? model.phaseLabel.replacingOccurrences(of: "使用", with: "") : model.phaseLabel
+        let statusWidth = max(44, min(78, availableWidth * 0.24))
+
+        return HStack(alignment: .center, spacing: 6 + (6 * widthProgress)) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("StandForge")
                     .font(.system(size: 11 + (2 * titleOpacity), weight: .medium))
                     .foregroundStyle(.secondary)
-                    .opacity(titleOpacity)
-                    .frame(height: titleOpacity > 0.18 ? nil : 0)
+                    .opacity(titleOpacity * widthProgress)
+                    .frame(height: titleOpacity * widthProgress > 0.18 ? nil : 0)
 
                 Text(formatTime(model.displaySeconds))
                     .font(.system(size: timeSize, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .minimumScaleFactor(0.68)
             }
+            .frame(minWidth: 82, alignment: .leading)
+            .layoutPriority(2)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
 
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(model.phaseLabel)
-                    .font(.system(size: 11 + (2 * compactProgress), weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .opacity(max(0.35, compactProgress))
+            Text(labelText)
+                .font(.system(size: 10.5 + (2 * min(compactProgress, widthProgress)), weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(width: statusWidth, alignment: .trailing)
+                .offset(x: showSecondaryControls ? 0 : -4)
+                .layoutPriority(1)
 
-                HStack(spacing: 5 + (3 * compactProgress)) {
+            HStack(spacing: controlSpacing) {
+                if showSecondaryControls {
                     glassIconButton(
                         systemName: "eye.slash",
-                        accessibilityLabel: "隐藏悬浮窗"
+                        accessibilityLabel: "隐藏悬浮窗",
+                        size: buttonSize,
+                        iconSize: iconSize
                     ) {
                         onHide()
                     }
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
 
                     glassIconButton(
                         systemName: isExpanded ? "chevron.down" : "slider.horizontal.3",
-                        accessibilityLabel: isExpanded ? "收起设置" : "展开设置"
+                        accessibilityLabel: isExpanded ? "收起设置" : "展开设置",
+                        size: buttonSize,
+                        iconSize: iconSize
                     ) {
                         isExpanded.toggle()
                     }
-
-                    glassIconButton(
-                        systemName: model.primaryActionIcon,
-                        accessibilityLabel: model.primaryActionTitle,
-                        prominent: true
-                    ) {
-                        model.primaryAction()
-                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
-                .scaleEffect(0.86 + (0.14 * compactProgress), anchor: .trailing)
+
+                glassIconButton(
+                    systemName: model.primaryActionIcon,
+                    accessibilityLabel: model.primaryActionTitle,
+                    prominent: true,
+                    size: buttonSize,
+                    iconSize: iconSize
+                ) {
+                    model.primaryAction()
+                }
             }
+            .layoutPriority(3)
+            .animation(.smooth(duration: 0.18), value: showSecondaryControls)
         }
     }
 
@@ -789,13 +821,15 @@ private struct FloatingTimerWindow: View {
         systemName: String,
         accessibilityLabel: String,
         prominent: Bool = false,
+        size: Double = 28,
+        iconSize: Double = 13,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(prominent ? .white : .primary)
-                .frame(width: 28, height: 28)
+                .frame(width: size, height: size)
                 .contentShape(Circle())
                 .standForgeGlass(Circle(), interactive: true, tint: prominent ? .teal : nil)
         }
