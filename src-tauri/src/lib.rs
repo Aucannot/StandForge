@@ -2,6 +2,7 @@ mod db;
 mod models;
 mod timer;
 mod commands;
+mod tray;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -30,12 +31,14 @@ pub fn run() {
             app.manage(commands::AppState {
                 timer: timer.clone(),
             });
+            tray::setup(app, timer.clone())?;
 
             let app_handle = app.handle().clone();
             thread::spawn(move || {
                 loop {
                     if let Ok(timer) = timer.lock() {
                         timer.update(&app_handle);
+                        tray::update(&app_handle, &timer);
                     }
                     thread::sleep(Duration::from_secs(1));
                 }

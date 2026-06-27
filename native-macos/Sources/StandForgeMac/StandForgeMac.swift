@@ -5,6 +5,11 @@ import UserNotifications
 private let compactWindowSize = NSSize(width: 340, height: 80)
 private let expandedWindowSize = NSSize(width: 340, height: 520)
 
+private func formatTime(_ seconds: Int) -> String {
+    let safeSeconds = max(0, seconds)
+    return String(format: "%02d:%02d", safeSeconds / 60, safeSeconds % 60)
+}
+
 @main
 enum StandForgeMacLauncher {
     static func main() {
@@ -22,12 +27,22 @@ enum StandForgeMacLauncher {
 private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let timerModel = StandForgeTimerModel()
     private var window: NSWindow?
+    private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
+    private var statusRefreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         timerModel.requestNotificationPermission()
+        createStatusItem()
         createFloatingWindow()
         timerModel.startIfNeeded()
+        updateStatusItem()
+        statusRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateStatusItem()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -43,9 +58,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 
     private func createFloatingWindow() {
-        let rootView = FloatingTimerWindow(model: timerModel) { [weak self] expanded in
-            self?.resizeFloatingWindow(expanded: expanded)
-        }
+        let rootView = FloatingTimerWindow(
+            model: timerModel,
+            onExpansionChange: { [weak self] expanded in
+                self?.resizeFloatingWindow(expanded: expanded)
+            },
+            onHide: { [weak self] in
+                self?.hideFloatingWindow()
+            },
+            onQuit: {
+                NSApplication.shared.terminate(nil)
+            }
+        )
 
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
@@ -73,6 +97,61 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         self.window = window
     }
 
+    private func createStatusItem() {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = StandForgeStatusIcon.makeImage()
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "显示悬浮窗", action: #selector(showFloatingWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "隐藏悬浮窗", action: #selector(hideFloatingWindow), keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "暂停", action: #selector(togglePauseFromMenu), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "结束本轮", action: #selector(stopFromMenu), keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "退出 StandForge", action: #selector(quitFromMenu), keyEquivalent: "q"))
+
+        statusItem.menu = menu
+        self.statusItem = statusItem
+        self.statusMenu = menu
+    }
+
+    private func updateStatusItem() {
+        statusItem?.button?.title = " \(formatTime(timerModel.displaySeconds))"
+        statusItem?.button?.toolTip = "\(timerModel.phaseLabel) · \(formatTime(timerModel.displaySeconds))"
+
+        guard let statusMenu else { return }
+        statusMenu.item(at: 0)?.isEnabled = window?.isVisible != true
+        statusMenu.item(at: 1)?.isEnabled = window?.isVisible == true
+        statusMenu.item(at: 3)?.title = timerModel.phase == .paused ? "继续" : "暂停"
+    }
+
+    @objc private func showFloatingWindow() {
+        guard let window else { return }
+        window.orderFrontRegardless()
+        updateStatusItem()
+    }
+
+    @objc private func hideFloatingWindow() {
+        window?.orderOut(nil)
+        updateStatusItem()
+    }
+
+    @objc private func togglePauseFromMenu() {
+        timerModel.togglePause()
+        updateStatusItem()
+    }
+
+    @objc private func stopFromMenu() {
+        timerModel.stop()
+        updateStatusItem()
+    }
+
+    @objc private func quitFromMenu() {
+        NSApplication.shared.terminate(nil)
+    }
+
     private func resizeFloatingWindow(expanded: Bool) {
         guard let window else { return }
         let targetSize = expanded ? expandedWindowSize : compactWindowSize
@@ -88,7 +167,28 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 }
 
-private enum TimerPhase {
+private enum StandForgeStatusIcon {
+    static func makeImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.labelColor.setStroke()
+        NSBezierPath(roundedRect: NSRect(x: 3, y: 3, width: 12, height: 12), xRadius: 3, yRadius: 3).stroke()
+        let standPath = NSBezierPath()
+        standPath.lineWidth = 2
+        standPath.lineCapStyle = .round
+        standPath.move(to: NSPoint(x: 7, y: 5))
+        standPath.line(to: NSPoint(x: 7, y: 13))
+        standPath.move(to: NSPoint(x: 11, y: 5))
+        standPath.line(to: NSPoint(x: 11, y: 13))
+        standPath.stroke()
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }
+}
+
+private enum TimerPhase: Equatable {
     case idle
     case sitting
     case standPending
@@ -188,6 +288,14 @@ private final class StandForgeTimerModel: ObservableObject {
         case .paused:
             resume()
         default:
+            pause()
+        }
+    }
+
+    func togglePause() {
+        if phase == .paused {
+            resume()
+        } else {
             pause()
         }
     }
@@ -320,6 +428,8 @@ private enum FloatingTab: String, CaseIterable, Identifiable {
 private struct FloatingTimerWindow: View {
     @ObservedObject var model: StandForgeTimerModel
     let onExpansionChange: (Bool) -> Void
+    let onHide: () -> Void
+    let onQuit: () -> Void
 
     @State private var isExpanded = false
     @State private var selectedTab: FloatingTab = .reminder
@@ -370,6 +480,13 @@ private struct FloatingTimerWindow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
+                    glassIconButton(
+                        systemName: "eye.slash",
+                        accessibilityLabel: "隐藏悬浮窗"
+                    ) {
+                        onHide()
+                    }
+
                     glassIconButton(
                         systemName: isExpanded ? "chevron.down" : "slider.horizontal.3",
                         accessibilityLabel: isExpanded ? "收起设置" : "展开设置"
@@ -499,6 +616,15 @@ private struct FloatingTimerWindow: View {
 
                 sliderPanel(title: "屏幕使用", value: $model.sitMinutes, range: 5...90, step: 5)
                 sliderPanel(title: "站立", value: $model.standMinutes, range: 3...30, step: 1)
+
+                HStack(spacing: 8) {
+                    glassTextButton(title: "隐藏悬浮窗", systemName: "eye.slash") {
+                        onHide()
+                    }
+                    glassTextButton(title: "退出", systemName: "power") {
+                        onQuit()
+                    }
+                }
             }
             .padding(.bottom, 4)
         }
@@ -610,11 +736,6 @@ private struct FloatingTimerWindow: View {
             )
         }
         .buttonStyle(.plain)
-    }
-
-    private func formatTime(_ seconds: Int) -> String {
-        let safeSeconds = max(0, seconds)
-        return String(format: "%02d:%02d", safeSeconds / 60, safeSeconds % 60)
     }
 }
 

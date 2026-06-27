@@ -8,9 +8,11 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  EyeOff,
   Pause,
   Palette,
   Play,
+  Power,
   RotateCcw,
   Settings2,
   SlidersHorizontal,
@@ -234,6 +236,22 @@ export function FloatingWindow() {
     await pauseTimer();
   };
 
+  const handleHideWindow = async () => {
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // Browser preview has no native window to hide.
+    }
+  };
+
+  const handleQuitApp = async () => {
+    try {
+      await invoke('quit_app');
+    } catch {
+      // Browser preview has no native app process to quit.
+    }
+  };
+
   const primaryLabel = isIdle
     ? '启动'
     : isStandPrompt
@@ -265,6 +283,14 @@ export function FloatingWindow() {
           <div className="floating-side">
             <p className="floating-status">{label}</p>
             <div className="floating-actions">
+              <button
+                type="button"
+                className="floating-icon-btn"
+                onClick={handleHideWindow}
+                aria-label="隐藏悬浮窗"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+              </button>
               <button
                 type="button"
                 className="floating-icon-btn"
@@ -488,6 +514,29 @@ export function FloatingWindow() {
                   {configError && (
                     <p className="floating-error">设置未保存：{configError}</p>
                   )}
+
+                  <div className="floating-chip-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="floating-chip-button"
+                      onClick={handleHideWindow}
+                    >
+                      <EyeOff className="h-3.5 w-3.5" />
+                      隐藏悬浮窗
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="floating-chip-button floating-danger-button"
+                      onClick={handleQuitApp}
+                    >
+                      <Power className="h-3.5 w-3.5" />
+                      退出
+                    </Button>
+                  </div>
                 </div>
               </TabsContent>
 
