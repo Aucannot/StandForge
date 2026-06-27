@@ -3,6 +3,7 @@ import SwiftUI
 import UserNotifications
 
 private let compactWindowSize = NSSize(width: 340, height: 80)
+private let minimumCompactWindowSize = NSSize(width: 260, height: 40)
 private let expandedWindowSize = NSSize(width: 340, height: 520)
 
 private func formatTime(_ seconds: Int) -> String {
@@ -89,7 +90,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isMovableByWindowBackground = true
-        window.minSize = compactWindowSize
+        window.minSize = minimumCompactWindowSize
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
@@ -466,42 +467,53 @@ private struct FloatingTimerWindow: View {
     @State private var selectedTab: FloatingTab = .reminder
 
     var body: some View {
-        StandForgeGlassContainer {
-            VStack(spacing: isExpanded ? 12 : 0) {
-                header
-                    .frame(height: 58)
+        GeometryReader { proxy in
+            let compactProgress = max(0, min(1, (proxy.size.height - minimumCompactWindowSize.height) / 40))
+            let headerHeight = isExpanded ? 58 : max(34, proxy.size.height - 22)
+            let timeSize = isExpanded ? 34 : 22 + (12 * compactProgress)
+            let titleOpacity = isExpanded ? 1 : compactProgress
+            let horizontalPadding = isExpanded ? 10 : 8 + (3 * compactProgress)
 
-                if isExpanded {
-                    expandedPanel
+            StandForgeGlassContainer {
+                VStack(spacing: isExpanded ? 12 : 0) {
+                    header(timeSize: timeSize, titleOpacity: titleOpacity, compactProgress: compactProgress)
+                        .frame(height: headerHeight)
+
+                    if isExpanded {
+                        expandedPanel
+                    }
                 }
-            }
-            .padding(isExpanded ? 10 : 11)
-            .frame(
-                minWidth: compactWindowSize.width,
-                maxWidth: .infinity,
-                minHeight: isExpanded ? 420 : compactWindowSize.height,
-                maxHeight: .infinity
-            )
-            .standForgeGlass(
-                RoundedRectangle(cornerRadius: isExpanded ? 20 : 18, style: .continuous),
-                interactive: false
-            )
-            .animation(.smooth(duration: 0.24), value: isExpanded)
-            .onChange(of: isExpanded) { _, value in
-                onExpansionChange(value)
+                .padding(.vertical, isExpanded ? 10 : 3 + (8 * compactProgress))
+                .padding(.horizontal, horizontalPadding)
+                .frame(
+                    minWidth: minimumCompactWindowSize.width,
+                    maxWidth: .infinity,
+                    minHeight: isExpanded ? 420 : minimumCompactWindowSize.height,
+                    maxHeight: .infinity
+                )
+                .standForgeGlass(
+                    RoundedRectangle(cornerRadius: isExpanded ? 20 : 16 + (2 * compactProgress), style: .continuous),
+                    interactive: false
+                )
+                .animation(.smooth(duration: 0.24), value: isExpanded)
+                .onChange(of: isExpanded) { _, value in
+                    onExpansionChange(value)
+                }
             }
         }
     }
 
-    private var header: some View {
+    private func header(timeSize: Double, titleOpacity: Double, compactProgress: Double) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("StandForge")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 11 + (2 * titleOpacity), weight: .medium))
                     .foregroundStyle(.secondary)
+                    .opacity(titleOpacity)
+                    .frame(height: titleOpacity > 0.18 ? nil : 0)
 
                 Text(formatTime(model.displaySeconds))
-                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: timeSize, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -511,11 +523,12 @@ private struct FloatingTimerWindow: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 Text(model.phaseLabel)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 11 + (2 * compactProgress), weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .opacity(max(0.35, compactProgress))
 
-                HStack(spacing: 8) {
+                HStack(spacing: 5 + (3 * compactProgress)) {
                     glassIconButton(
                         systemName: "eye.slash",
                         accessibilityLabel: "隐藏悬浮窗"
@@ -538,6 +551,7 @@ private struct FloatingTimerWindow: View {
                         model.primaryAction()
                     }
                 }
+                .scaleEffect(0.86 + (0.14 * compactProgress), anchor: .trailing)
             }
         }
     }
