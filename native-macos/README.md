@@ -22,7 +22,7 @@ The script writes a signed app bundle and a disk image to:
 
 ```text
 native-macos/.build/app/StandForge Native.app
-native-macos/.build/dmg/StandForge-Native-0.1.0-arm64.dmg
+native-macos/.build/dmg/StandForge-Native-0.1.1-arm64.dmg
 ```
 
 By default the app is signed with an ad hoc signature so local builds can be
