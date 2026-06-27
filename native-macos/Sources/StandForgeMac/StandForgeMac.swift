@@ -30,6 +30,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
+    private var showWindowMenuItem: NSMenuItem?
+    private var hideWindowMenuItem: NSMenuItem?
     private var notificationsMenuItem: NSMenuItem?
     private var soundMenuItem: NSMenuItem?
     private var statusRefreshTimer: Timer?
@@ -108,8 +110,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
         let menu = NSMenu()
-        menu.addItem(statusMenuItem(title: "显示悬浮窗", action: #selector(showFloatingWindow)))
-        menu.addItem(statusMenuItem(title: "隐藏悬浮窗", action: #selector(hideFloatingWindow)))
+        let showItem = statusMenuItem(title: "显示悬浮窗", action: #selector(showFloatingWindow))
+        let hideItem = statusMenuItem(title: "隐藏悬浮窗", action: #selector(hideFloatingWindow))
+        menu.addItem(showItem)
+        menu.addItem(hideItem)
         menu.addItem(.separator())
         let notificationsItem = statusMenuItem(title: "系统通知", action: #selector(toggleNotificationsFromMenu))
         let soundItem = statusMenuItem(title: "提醒声音", action: #selector(toggleSoundFromMenu))
@@ -124,6 +128,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         statusItem.menu = menu
         self.statusItem = statusItem
         self.statusMenu = menu
+        self.showWindowMenuItem = showItem
+        self.hideWindowMenuItem = hideItem
         self.notificationsMenuItem = notificationsItem
         self.soundMenuItem = soundItem
     }
@@ -139,8 +145,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         statusItem?.button?.toolTip = "\(timerModel.phaseLabel) · \(formatTime(timerModel.displaySeconds))"
 
         guard let statusMenu else { return }
-        statusMenu.item(at: 0)?.isEnabled = window?.isVisible != true
-        statusMenu.item(at: 1)?.isEnabled = window?.isVisible == true
+        let isWindowVisible = window?.isVisible == true
+        showWindowMenuItem?.state = isWindowVisible ? .on : .off
+        hideWindowMenuItem?.state = isWindowVisible ? .off : .on
+        statusMenu.item(at: 0)?.isEnabled = true
+        statusMenu.item(at: 1)?.isEnabled = isWindowVisible
         notificationsMenuItem?.state = timerModel.notificationsEnabled ? .on : .off
         soundMenuItem?.state = timerModel.soundEnabled ? .on : .off
         statusMenu.item(at: 6)?.title = timerModel.phase == .paused ? "继续" : "暂停"
@@ -148,6 +157,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     @objc private func showFloatingWindow() {
         guard let window else { return }
+        keepWindowVisible(window)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         updateStatusItem()
     }
@@ -182,6 +194,34 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     @objc private func quitFromMenu() {
         NSApplication.shared.terminate(nil)
+    }
+
+    private func keepWindowVisible(_ window: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let visibleFrame = screen.visibleFrame
+        var frame = window.frame
+
+        if frame.width < minimumCompactWindowSize.width {
+            frame.size.width = minimumCompactWindowSize.width
+        }
+        if frame.height < minimumCompactWindowSize.height {
+            frame.size.height = minimumCompactWindowSize.height
+        }
+
+        if frame.maxX > visibleFrame.maxX {
+            frame.origin.x = visibleFrame.maxX - frame.width - 12
+        }
+        if frame.minX < visibleFrame.minX {
+            frame.origin.x = visibleFrame.minX + 12
+        }
+        if frame.maxY > visibleFrame.maxY {
+            frame.origin.y = visibleFrame.maxY - frame.height - 12
+        }
+        if frame.minY < visibleFrame.minY {
+            frame.origin.y = visibleFrame.minY + 12
+        }
+
+        window.setFrame(frame, display: true)
     }
 
     private func resizeFloatingWindow(expanded: Bool) {
