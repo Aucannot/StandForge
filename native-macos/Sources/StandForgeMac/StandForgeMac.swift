@@ -29,6 +29,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
+    private var notificationsMenuItem: NSMenuItem?
+    private var soundMenuItem: NSMenuItem?
     private var statusRefreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -74,7 +76,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: compactWindowSize),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -87,6 +89,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isMovableByWindowBackground = true
+        window.minSize = compactWindowSize
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
@@ -104,17 +107,30 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "显示悬浮窗", action: #selector(showFloatingWindow), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "隐藏悬浮窗", action: #selector(hideFloatingWindow), keyEquivalent: ""))
+        menu.addItem(statusMenuItem(title: "显示悬浮窗", action: #selector(showFloatingWindow)))
+        menu.addItem(statusMenuItem(title: "隐藏悬浮窗", action: #selector(hideFloatingWindow)))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "暂停", action: #selector(togglePauseFromMenu), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "结束本轮", action: #selector(stopFromMenu), keyEquivalent: ""))
+        let notificationsItem = statusMenuItem(title: "系统通知", action: #selector(toggleNotificationsFromMenu))
+        let soundItem = statusMenuItem(title: "提醒声音", action: #selector(toggleSoundFromMenu))
+        menu.addItem(notificationsItem)
+        menu.addItem(soundItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出 StandForge", action: #selector(quitFromMenu), keyEquivalent: "q"))
+        menu.addItem(statusMenuItem(title: "暂停", action: #selector(togglePauseFromMenu)))
+        menu.addItem(statusMenuItem(title: "结束本轮", action: #selector(stopFromMenu)))
+        menu.addItem(.separator())
+        menu.addItem(statusMenuItem(title: "退出 StandForge", action: #selector(quitFromMenu), keyEquivalent: "q"))
 
         statusItem.menu = menu
         self.statusItem = statusItem
         self.statusMenu = menu
+        self.notificationsMenuItem = notificationsItem
+        self.soundMenuItem = soundItem
+    }
+
+    private func statusMenuItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        return item
     }
 
     private func updateStatusItem() {
@@ -124,7 +140,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         guard let statusMenu else { return }
         statusMenu.item(at: 0)?.isEnabled = window?.isVisible != true
         statusMenu.item(at: 1)?.isEnabled = window?.isVisible == true
-        statusMenu.item(at: 3)?.title = timerModel.phase == .paused ? "继续" : "暂停"
+        notificationsMenuItem?.state = timerModel.notificationsEnabled ? .on : .off
+        soundMenuItem?.state = timerModel.soundEnabled ? .on : .off
+        statusMenu.item(at: 6)?.title = timerModel.phase == .paused ? "继续" : "暂停"
     }
 
     @objc private func showFloatingWindow() {
@@ -140,6 +158,19 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     @objc private func togglePauseFromMenu() {
         timerModel.togglePause()
+        updateStatusItem()
+    }
+
+    @objc private func toggleNotificationsFromMenu() {
+        timerModel.notificationsEnabled.toggle()
+        if timerModel.notificationsEnabled {
+            timerModel.requestNotificationPermission()
+        }
+        updateStatusItem()
+    }
+
+    @objc private func toggleSoundFromMenu() {
+        timerModel.soundEnabled.toggle()
         updateStatusItem()
     }
 
@@ -445,7 +476,12 @@ private struct FloatingTimerWindow: View {
                 }
             }
             .padding(isExpanded ? 10 : 11)
-            .frame(width: 340, height: isExpanded ? 520 : 80)
+            .frame(
+                minWidth: compactWindowSize.width,
+                maxWidth: .infinity,
+                minHeight: isExpanded ? 420 : compactWindowSize.height,
+                maxHeight: .infinity
+            )
             .standForgeGlass(
                 RoundedRectangle(cornerRadius: isExpanded ? 20 : 18, style: .continuous),
                 interactive: false
