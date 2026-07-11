@@ -8,15 +8,15 @@ StandForge is a small macOS/Tauri app that runs a background sitting timer and p
 - Background timer that keeps running after the settings window is closed
 - Always-on-top reminder popup when it is time to stand
 - Pause, resume, stop, snooze, and manual phase switching
-- Local SQLite storage for cycle settings and completed stand sessions
+- Local persistence for cycle settings, active timers, and completed stand sessions
 - Today view with completed sessions, standing time, snooze count, and completion rate
 
 ## Development
 
 This repository now has two app implementations:
 
-- **Tauri/React**: the current cross-platform shell with CSS glass styling.
-- **Native macOS**: a SwiftUI/AppKit floating window that uses system Liquid Glass on macOS 26+.
+- **Tauri/React**: the current cross-platform shell with CSS glass styling and SQLite storage.
+- **Native macOS**: a SwiftUI/AppKit floating window that uses system Liquid Glass on macOS 26+ and stores its state in `UserDefaults`.
 
 ```bash
 npm install
@@ -50,3 +50,10 @@ npm run mac:native:build
 ```
 
 The native app bundle is written to `native-macos/.build/app/StandForge Native.app`.
+
+Run the backend and native unit tests with:
+
+```bash
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+swift test --package-path native-macos
+```

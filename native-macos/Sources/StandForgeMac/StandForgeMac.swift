@@ -25,7 +25,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
-        timerModel.requestNotificationPermission()
+        if timerModel.notificationsEnabled {
+            timerModel.requestNotificationPermission()
+        }
         createFloatingWindow()
         timerModel.startIfNeeded()
     }
@@ -88,7 +90,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 }
 
-private enum TimerPhase {
+enum TimerPhase: String, Codable {
     case idle
     case sitting
     case standPending
@@ -97,35 +99,88 @@ private enum TimerPhase {
     case paused
 }
 
+struct NativeStandSession: Codable, Identifiable {
+    let id: UUID
+    let start: Date
+    let end: Date
+    let durationSeconds: Int
+    let snoozeCount: Int
+}
+
+private struct PersistedTimerState: Codable {
+    let phase: TimerPhase
+    let deadline: Date?
+    let remainingSeconds: Int
+    let totalPhaseSeconds: Int
+    let phaseBeforePause: TimerPhase
+    let standStartedAt: Date?
+    let snoozeCount: Int
+}
+
 @MainActor
-private final class StandForgeTimerModel: ObservableObject {
+final class StandForgeTimerModel: ObservableObject {
     @Published var phase: TimerPhase = .idle
     @Published var remainingSeconds: Int = 45 * 60
     @Published var totalPhaseSeconds: Int = 45 * 60
     @Published var sitMinutes: Double {
-        didSet { defaults.set(sitMinutes, forKey: "sitMinutes") }
+        didSet {
+            defaults.set(sitMinutes, forKey: "sitMinutes")
+            if phase == .idle {
+                remainingSeconds = Int(sitMinutes * 60)
+                totalPhaseSeconds = remainingSeconds
+            }
+        }
     }
     @Published var standMinutes: Double {
         didSet { defaults.set(standMinutes, forKey: "standMinutes") }
     }
     @Published var notificationsEnabled: Bool {
-        didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled") }
+        didSet {
+            defaults.set(notificationsEnabled, forKey: "notificationsEnabled")
+            if notificationsEnabled {
+                requestNotificationPermission()
+            }
+        }
     }
     @Published var soundEnabled: Bool {
         didSet { defaults.set(soundEnabled, forKey: "soundEnabled") }
     }
+    @Published private(set) var sessions: [NativeStandSession]
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private var timer: Timer?
     private var phaseBeforePause: TimerPhase = .idle
+    private var deadline: Date?
+    private var standStartedAt: Date?
+    private var snoozeCount = 0
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         sitMinutes = defaults.object(forKey: "sitMinutes") as? Double ?? 45
         standMinutes = defaults.object(forKey: "standMinutes") as? Double ?? 15
         notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? true
         soundEnabled = defaults.object(forKey: "soundEnabled") as? Bool ?? true
-        remainingSeconds = Int(sitMinutes * 60)
-        totalPhaseSeconds = Int(sitMinutes * 60)
+        sessions = Self.decodeSessions(from: defaults)
+
+        if let data = defaults.data(forKey: "timerState"),
+           let persisted = try? JSONDecoder().decode(PersistedTimerState.self, from: data) {
+            phase = persisted.phase
+            deadline = persisted.deadline
+            totalPhaseSeconds = persisted.totalPhaseSeconds
+            phaseBeforePause = persisted.phaseBeforePause
+            standStartedAt = persisted.standStartedAt
+            snoozeCount = persisted.snoozeCount
+            if persisted.phase == .paused {
+                remainingSeconds = persisted.remainingSeconds
+            } else if let deadline = persisted.deadline {
+                remainingSeconds = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+            } else {
+                remainingSeconds = persisted.remainingSeconds
+            }
+        } else {
+            remainingSeconds = Int(sitMinutes * 60)
+            totalPhaseSeconds = Int(sitMinutes * 60)
+        }
     }
 
     var displaySeconds: Int {
@@ -177,6 +232,22 @@ private final class StandForgeTimerModel: ObservableObject {
         }
     }
 
+    var todaySessions: [NativeStandSession] {
+        sessions
+            .filter { Calendar.current.isDateInToday($0.end) }
+            .sorted { $0.end > $1.end }
+    }
+
+    var todayTotalDuration: Int {
+        todaySessions.reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    var todayCompletionRate: Int {
+        guard !todaySessions.isEmpty else { return 0 }
+        let target = max(1, Int(standMinutes * 60) * todaySessions.count)
+        return min(100, todayTotalDuration * 100 / target)
+    }
+
     func primaryAction() {
         switch phase {
         case .idle:
@@ -193,23 +264,37 @@ private final class StandForgeTimerModel: ObservableObject {
     }
 
     func startIfNeeded() {
-        guard phase == .idle else { return }
-        startSitting()
+        if phase == .idle {
+            startSitting()
+            return
+        }
+        if phase == .sitting || phase == .standing || phase == .snoozed {
+            scheduleTimer(keepDeadline: true)
+            tick()
+        }
     }
 
     func stop() {
+        completeStandingSessionIfNeeded()
         timer?.invalidate()
         timer = nil
+        deadline = nil
         phase = .idle
         totalPhaseSeconds = Int(sitMinutes * 60)
         remainingSeconds = totalPhaseSeconds
+        phaseBeforePause = .idle
+        snoozeCount = 0
+        persistState()
     }
 
     func snooze(minutes: Int) {
+        guard phase == .standPending || phase == .snoozed else { return }
         phase = .snoozed
         totalPhaseSeconds = minutes * 60
         remainingSeconds = totalPhaseSeconds
+        snoozeCount += 1
         scheduleTimer()
+        persistState()
     }
 
     func startStandingNow() {
@@ -221,34 +306,45 @@ private final class StandForgeTimerModel: ObservableObject {
     }
 
     private func startSitting() {
+        completeStandingSessionIfNeeded()
         phase = .sitting
         totalPhaseSeconds = Int(sitMinutes * 60)
         remainingSeconds = totalPhaseSeconds
+        snoozeCount = 0
         scheduleTimer()
+        persistState()
     }
 
     private func startStanding() {
         phase = .standing
         totalPhaseSeconds = Int(standMinutes * 60)
         remainingSeconds = totalPhaseSeconds
+        standStartedAt = Date()
         scheduleTimer()
+        persistState()
     }
 
     private func pause() {
         guard phase != .idle, phase != .paused else { return }
         phaseBeforePause = phase
         phase = .paused
+        deadline = nil
         timer?.invalidate()
         timer = nil
+        persistState()
     }
 
     private func resume() {
         phase = phaseBeforePause == .idle ? .sitting : phaseBeforePause
         scheduleTimer()
+        persistState()
     }
 
-    private func scheduleTimer() {
+    private func scheduleTimer(keepDeadline: Bool = false) {
         timer?.invalidate()
+        if !keepDeadline || deadline == nil {
+            deadline = Date().addingTimeInterval(TimeInterval(remainingSeconds))
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -258,12 +354,14 @@ private final class StandForgeTimerModel: ObservableObject {
 
     private func tick() {
         guard phase == .sitting || phase == .standing || phase == .snoozed else { return }
-        remainingSeconds = max(0, remainingSeconds - 1)
+        guard let deadline else { return }
+        remainingSeconds = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
 
         guard remainingSeconds == 0 else { return }
 
         timer?.invalidate()
         timer = nil
+        self.deadline = nil
 
         switch phase {
         case .sitting:
@@ -277,6 +375,53 @@ private final class StandForgeTimerModel: ObservableObject {
         default:
             break
         }
+        persistState()
+    }
+
+    private func completeStandingSessionIfNeeded() {
+        guard let standStartedAt else { return }
+        let end = Date()
+        let duration = max(0, Int(end.timeIntervalSince(standStartedAt)))
+        if duration > 0 {
+            sessions.append(
+                NativeStandSession(
+                    id: UUID(),
+                    start: standStartedAt,
+                    end: end,
+                    durationSeconds: duration,
+                    snoozeCount: snoozeCount
+                )
+            )
+            sessions = Array(sessions.suffix(500))
+            persistSessions()
+        }
+        self.standStartedAt = nil
+    }
+
+    private func persistState() {
+        let state = PersistedTimerState(
+            phase: phase,
+            deadline: deadline,
+            remainingSeconds: remainingSeconds,
+            totalPhaseSeconds: totalPhaseSeconds,
+            phaseBeforePause: phaseBeforePause,
+            standStartedAt: standStartedAt,
+            snoozeCount: snoozeCount
+        )
+        if let data = try? JSONEncoder().encode(state) {
+            defaults.set(data, forKey: "timerState")
+        }
+    }
+
+    private func persistSessions() {
+        if let data = try? JSONEncoder().encode(sessions) {
+            defaults.set(data, forKey: "sessions")
+        }
+    }
+
+    private static func decodeSessions(from defaults: UserDefaults) -> [NativeStandSession] {
+        guard let data = defaults.data(forKey: "sessions") else { return [] }
+        return (try? JSONDecoder().decode([NativeStandSession].self, from: data)) ?? []
     }
 
     private func notify(title: String, subtitle: String, body: String) {
@@ -499,6 +644,10 @@ private struct FloatingTimerWindow: View {
 
                 sliderPanel(title: "屏幕使用", value: $model.sitMinutes, range: 5...90, step: 5)
                 sliderPanel(title: "站立", value: $model.standMinutes, range: 3...30, step: 1)
+
+                glassTextButton(title: "退出 StandForge", systemName: "power") {
+                    NSApplication.shared.terminate(nil)
+                }
             }
             .padding(.bottom, 4)
         }
@@ -507,20 +656,40 @@ private struct FloatingTimerWindow: View {
     private var todayContent: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                statPanel(title: "站立总时长", value: "0 分")
-                statPanel(title: "完成次数", value: "0")
-                statPanel(title: "完成率", value: "0%")
+                statPanel(title: "站立总时长", value: formatDuration(model.todayTotalDuration))
+                statPanel(title: "完成次数", value: "\(model.todaySessions.count)")
+                statPanel(title: "完成率", value: "\(model.todayCompletionRate)%")
             }
 
             glassPanel {
-                VStack(spacing: 4) {
-                    Text("今天还没有完成记录")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("原生版本先提供 Liquid Glass 浮窗和提醒流程。")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                if model.todaySessions.isEmpty {
+                    VStack(spacing: 4) {
+                        Text("今天还没有完成记录")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("完成一次站立后会出现在这里。")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(model.todaySessions.prefix(4))) { session in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(session.start.formatted(date: .omitted, time: .shortened))
+                                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                    Text("延后 \(session.snoozeCount) 次")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(formatDuration(session.durationSeconds))
+                                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -579,7 +748,7 @@ private struct FloatingTimerWindow: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(prominent ? .white : .primary)
-                .frame(width: 28, height: 28)
+                .frame(width: 36, height: 36)
                 .contentShape(Circle())
                 .standForgeGlass(Circle(), interactive: true, tint: prominent ? .teal : nil)
         }
@@ -615,6 +784,14 @@ private struct FloatingTimerWindow: View {
     private func formatTime(_ seconds: Int) -> String {
         let safeSeconds = max(0, seconds)
         return String(format: "%02d:%02d", safeSeconds / 60, safeSeconds % 60)
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        if minutes > 0 {
+            return "\(minutes) 分"
+        }
+        return "\(seconds) 秒"
     }
 }
 

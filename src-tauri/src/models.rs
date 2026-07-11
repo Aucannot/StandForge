@@ -29,3 +29,13 @@ pub struct CycleConfig {
     pub ui_skin: String,
     pub last_updated_at: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PersistedTimerState {
+    pub status: String,
+    pub current_session_id: Option<String>,
+    pub current_phase: String,
+    pub phase_remaining_sec: i64,
+    pub phase_start_sec: i64,
+    pub updated_at: String,
+}

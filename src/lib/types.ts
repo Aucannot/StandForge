@@ -7,7 +7,7 @@ export type TimerState =
   | 'snoozed'
   | 'paused';
 
-export type EndSource = 'user_confirm' | 'auto_end';
+export type EndSource = 'user_confirm' | 'auto_end' | 'user_stop' | 'manual_switch';
 
 // Stand Session
 export interface StandSession {

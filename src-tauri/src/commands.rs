@@ -1,8 +1,10 @@
-use tauri::{Manager, State};
 use std::sync::{Arc, Mutex};
-use crate::timer::StandTimer;
+
+use tauri::{Manager, State};
+
 use crate::db;
 use crate::models::{CycleConfig, StandSession};
+use crate::timer::{StandTimer, TimerState};
 
 #[derive(Debug)]
 pub struct AppState {
@@ -19,10 +21,14 @@ pub struct TodayStatsResponse {
     pub target_stand_sec: i32,
 }
 
+fn persist_timer(timer: &StandTimer) -> Result<(), String> {
+    db::save_timer_state(&timer.snapshot()).map_err(|error| error.to_string())
+}
+
 // Get current timer state
 #[tauri::command]
 pub fn get_timer_state(state: State<AppState>) -> Result<TimerStateResponse, String> {
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     Ok(TimerStateResponse {
         status: timer.get_state().as_str().to_string(),
         current_phase: timer.get_current_phase().as_str().to_string(),
@@ -48,11 +54,14 @@ pub fn start_timer(
     user_id: String,
     device_id: String,
 ) -> Result<String, String> {
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
+    if timer.get_state() != TimerState::Idle {
+        return Err("计时器已经在运行".to_string());
+    }
     let session_id = db::create_session(&user_id, &device_id)
         .map_err(|e| e.to_string())?;
-
-    let timer = state.timer.lock().unwrap();
     timer.start_sitting(session_id.clone());
+    persist_timer(&timer)?;
 
     Ok(session_id)
 }
@@ -61,7 +70,13 @@ pub fn start_timer(
 #[tauri::command]
 pub fn confirm_stand(state: State<AppState>) -> Result<(), String> {
     let session_id = {
-        let timer = state.timer.lock().unwrap();
+        let timer = state.timer.lock().map_err(|error| error.to_string())?;
+        if !matches!(
+            timer.get_state(),
+            TimerState::StandPending | TimerState::Snoozed
+        ) {
+            return Err("当前状态不能确认站立".to_string());
+        }
         timer.get_current_session_id()
     };
     if let Some(session_id) = session_id {
@@ -69,18 +84,19 @@ pub fn confirm_stand(state: State<AppState>) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     timer.confirm_stand();
-    Ok(())
+    persist_timer(&timer)
 }
 
 // User confirms they have sat down
 #[tauri::command]
-pub fn confirm_sit(
-    state: State<AppState>,
-) -> Result<i64, String> {
+pub fn confirm_sit(state: State<AppState>) -> Result<i64, String> {
     let session_id = {
-        let timer = state.timer.lock().unwrap();
+        let timer = state.timer.lock().map_err(|error| error.to_string())?;
+        if timer.get_state() != TimerState::Standing {
+            return Err("当前状态不能确认坐下".to_string());
+        }
         timer.get_current_session_id()
     };
 
@@ -94,40 +110,57 @@ pub fn confirm_sit(
     let next_session_id = db::create_session("default_user", "this_mac")
         .map_err(|e| e.to_string())?;
 
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     timer.start_next_sitting(next_session_id);
+    persist_timer(&timer)?;
     Ok(duration)
 }
 
 // Pause the timer
 #[tauri::command]
 pub fn pause_timer(state: State<AppState>) -> Result<(), String> {
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
+    if !matches!(timer.get_state(), TimerState::Sitting | TimerState::Standing) {
+        return Err("当前状态不能暂停".to_string());
+    }
     timer.pause();
-    Ok(())
+    persist_timer(&timer)
 }
 
 // Resume the timer
 #[tauri::command]
 pub fn resume_timer(state: State<AppState>) -> Result<(), String> {
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
+    if timer.get_state() != TimerState::Paused {
+        return Err("计时器没有暂停".to_string());
+    }
     timer.resume();
-    Ok(())
+    persist_timer(&timer)
 }
 
 // Stop and reset the timer
 #[tauri::command]
 pub fn stop_timer(state: State<AppState>) -> Result<(), String> {
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
+    if let Some(session_id) = timer.get_current_session_id() {
+        db::finish_or_discard_session(&session_id, "user_stop")
+            .map_err(|error| error.to_string())?;
+    }
     timer.stop();
-    Ok(())
+    db::clear_timer_state().map_err(|error| error.to_string())
 }
 
 // Switch to standing phase
 #[tauri::command]
 pub fn switch_to_stand(state: State<AppState>) -> Result<(), String> {
     let session_id = {
-        let timer = state.timer.lock().unwrap();
+        let timer = state.timer.lock().map_err(|error| error.to_string())?;
+        if !matches!(
+            timer.get_state(),
+            TimerState::Sitting | TimerState::StandPending | TimerState::Snoozed
+        ) {
+            return Err("当前状态不能切换到站立".to_string());
+        }
         timer.get_current_session_id()
     };
     if let Some(session_id) = session_id {
@@ -135,24 +168,46 @@ pub fn switch_to_stand(state: State<AppState>) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     timer.switch_to_stand();
-    Ok(())
+    persist_timer(&timer)
 }
 
 // Switch to sitting phase
 #[tauri::command]
 pub fn switch_to_sit(state: State<AppState>) -> Result<(), String> {
-    let timer = state.timer.lock().unwrap();
-    timer.switch_to_sit();
-    Ok(())
+    let session_id = {
+        let timer = state.timer.lock().map_err(|error| error.to_string())?;
+        if timer.get_state() != TimerState::Standing {
+            return Err("当前状态不能切换到坐姿".to_string());
+        }
+        timer.get_current_session_id()
+    };
+    if let Some(session_id) = session_id {
+        db::update_session_end(&session_id, "manual_switch")
+            .map_err(|error| error.to_string())?;
+    }
+    let next_session_id = db::create_session("default_user", "this_mac")
+        .map_err(|error| error.to_string())?;
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
+    timer.start_next_sitting(next_session_id);
+    persist_timer(&timer)
 }
 
 // Snooze the standing reminder
 #[tauri::command]
 pub fn snooze_stand(state: State<AppState>, snooze_minutes: i32) -> Result<(), String> {
+    if !(1..=120).contains(&snooze_minutes) {
+        return Err("延后时间必须在 1 到 120 分钟之间".to_string());
+    }
     let session_id = {
-        let timer = state.timer.lock().unwrap();
+        let timer = state.timer.lock().map_err(|error| error.to_string())?;
+        if !matches!(
+            timer.get_state(),
+            TimerState::StandPending | TimerState::Snoozed
+        ) {
+            return Err("当前状态不能延后站立提醒".to_string());
+        }
         timer.get_current_session_id()
     };
     if let Some(session_id) = session_id {
@@ -160,9 +215,9 @@ pub fn snooze_stand(state: State<AppState>, snooze_minutes: i32) -> Result<(), S
             .map_err(|e| e.to_string())?;
     }
 
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     timer.snooze(snooze_minutes as i64);
-    Ok(())
+    persist_timer(&timer)
 }
 
 #[tauri::command]
@@ -175,10 +230,26 @@ pub fn update_config_command(
     state: State<AppState>,
     config: CycleConfig,
 ) -> Result<(), String> {
+    if !(5..=180).contains(&config.sit_minutes) {
+        return Err("屏幕使用时长必须在 5 到 180 分钟之间".to_string());
+    }
+    if !(1..=120).contains(&config.stand_minutes) {
+        return Err("站立时长必须在 1 到 120 分钟之间".to_string());
+    }
+    if !(60..=86_400).contains(&config.auto_end_after_sec) {
+        return Err("自动结束时长必须在 60 秒到 24 小时之间".to_string());
+    }
+    if !matches!(config.ui_skin.as_str(), "classic" | "liquid_glass") {
+        return Err("未知的界面皮肤".to_string());
+    }
     db::update_config(&config).map_err(|e| e.to_string())?;
 
-    let timer = state.timer.lock().unwrap();
+    let timer = state.timer.lock().map_err(|error| error.to_string())?;
     timer.set_durations(config.sit_minutes as i64, config.stand_minutes as i64);
+    timer.set_auto_end(
+        config.auto_end_enabled,
+        config.auto_end_after_sec as i64,
+    );
 
     Ok(())
 }

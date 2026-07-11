@@ -12,7 +12,6 @@ use crate::timer::StandTimer;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             db::init_db().expect("failed to initialize StandForge database");
             let config = db::get_or_create_config("default_user")
@@ -21,10 +20,29 @@ pub fn run() {
                 config.sit_minutes as i64,
                 config.stand_minutes as i64,
             )));
-            let session_id = db::create_session("default_user", "this_mac")
-                .expect("failed to start StandForge background session");
+            let persisted = db::load_timer_state()
+                .expect("failed to load StandForge timer state");
             if let Ok(timer_ref) = timer.lock() {
-                timer_ref.start_sitting(session_id);
+                timer_ref.set_auto_end(
+                    config.auto_end_enabled,
+                    config.auto_end_after_sec as i64,
+                );
+                let restored = persisted
+                    .as_ref()
+                    .filter(|state| {
+                        state.current_session_id.as_deref().is_some_and(|session_id| {
+                            db::get_session(session_id).ok().flatten().is_some()
+                        })
+                    })
+                    .is_some_and(|state| timer_ref.restore(state));
+
+                if !restored {
+                    let session_id = db::create_session("default_user", "this_mac")
+                        .expect("failed to start StandForge background session");
+                    timer_ref.start_sitting(session_id);
+                    db::save_timer_state(&timer_ref.snapshot())
+                        .expect("failed to persist StandForge background session");
+                }
             }
 
             app.manage(commands::AppState {

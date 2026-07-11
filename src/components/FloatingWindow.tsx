@@ -8,6 +8,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  LoaderCircle,
+  LogOut,
   Pause,
   Palette,
   Play,
@@ -17,6 +19,7 @@ import {
   Square,
   TimerReset,
   UserCheck,
+  Volume2,
 } from 'lucide-react';
 import { DEFAULT_SIT_MINUTES, DEFAULT_STAND_MINUTES, DEFAULT_USER_ID, SNOOZE_OPTIONS } from '../lib/constants';
 import type { StandSession, TodayStats } from '../lib/types';
@@ -109,6 +112,8 @@ export function FloatingWindow() {
   const [standMinutes, setStandMinutes] = useState(DEFAULT_STAND_MINUTES);
   const [todayStats, setTodayStats] = useState<TodayStats | null>(null);
   const [todaySessions, setTodaySessions] = useState<StandSession[]>([]);
+  const [isActionPending, setIsActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -152,6 +157,8 @@ export function FloatingWindow() {
   const safeRemaining = Math.max(0, remainingSeconds);
   const uiSkin = config?.ui_skin ?? 'liquid_glass';
   const notificationsEnabled = config?.notifications_enabled ?? true;
+  const soundEnabled = config?.sound_enabled ?? true;
+  const autoEndEnabled = config?.auto_end_enabled ?? false;
   const isIdle = status === 'idle';
   const isPaused = status === 'paused';
   const isStandPrompt = status === 'stand_pending' || status === 'snoozed';
@@ -185,7 +192,7 @@ export function FloatingWindow() {
     async (nextSitMinutes: number, nextStandMinutes: number) => {
       setSitMinutes(nextSitMinutes);
       setStandMinutes(nextStandMinutes);
-      await updateConfig({
+      return updateConfig({
         sit_minutes: nextSitMinutes,
         stand_minutes: nextStandMinutes,
       });
@@ -213,25 +220,45 @@ export function FloatingWindow() {
     }
   }, []);
 
-  const handlePrimaryAction = async () => {
-    if (isIdle) {
-      await handleDurationsCommit(sitMinutes, standMinutes);
-      await startTimer();
+  const runAction = useCallback(async (action: () => Promise<void>) => {
+    if (isActionPending) {
       return;
     }
-    if (isStandPrompt) {
-      await confirmStand();
-      return;
+    setIsActionPending(true);
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(String(error));
+    } finally {
+      setIsActionPending(false);
     }
-    if (isStanding) {
-      await confirmSit();
-      return;
-    }
-    if (isPaused) {
-      await resumeTimer();
-      return;
-    }
-    await pauseTimer();
+  }, [isActionPending]);
+
+  const handlePrimaryAction = () => {
+    void runAction(async () => {
+      if (isIdle) {
+        const saved = await handleDurationsCommit(sitMinutes, standMinutes);
+        if (!saved) {
+          throw new Error('设置未保存，未启动计时器');
+        }
+        await startTimer();
+        return;
+      }
+      if (isStandPrompt) {
+        await confirmStand();
+        return;
+      }
+      if (isStanding) {
+        await confirmSit();
+        return;
+      }
+      if (isPaused) {
+        await resumeTimer();
+        return;
+      }
+      await pauseTimer();
+    });
   };
 
   const primaryLabel = isIdle
@@ -282,8 +309,12 @@ export function FloatingWindow() {
                 className="floating-icon-btn floating-primary-btn"
                 onClick={handlePrimaryAction}
                 aria-label={primaryLabel}
+                aria-busy={isActionPending}
+                disabled={isActionPending}
               >
-                {isIdle ? (
+                {isActionPending ? (
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                ) : isIdle ? (
                   <Play className="h-3.5 w-3.5" />
                 ) : isStandPrompt ? (
                   <Check className="h-3.5 w-3.5" />
@@ -336,11 +367,14 @@ export function FloatingWindow() {
                   <Button
                     type="button"
                     size="lg"
-                    disabled={isConfigLoading}
+                    disabled={isConfigLoading || isActionPending}
                     onClick={handlePrimaryAction}
+                    aria-busy={isActionPending}
                     className="floating-wide-button floating-solid-button"
                   >
-                    {isIdle ? (
+                    {isActionPending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : isIdle ? (
                       <Play className="h-4 w-4" />
                     ) : isStandPrompt ? (
                       <UserCheck className="h-4 w-4" />
@@ -363,7 +397,8 @@ export function FloatingWindow() {
                           variant="outline"
                           size="sm"
                           className="floating-chip-button"
-                          onClick={() => snooze(minutes)}
+                          onClick={() => void runAction(() => snooze(minutes))}
+                          disabled={isActionPending}
                         >
                           +{minutes} 分钟
                         </Button>
@@ -377,7 +412,8 @@ export function FloatingWindow() {
                       variant="outline"
                       size="sm"
                       className="floating-chip-button"
-                      onClick={stopTimer}
+                      onClick={() => void runAction(stopTimer)}
+                      disabled={isActionPending || isIdle}
                     >
                       <Square className="h-3.5 w-3.5" />
                       结束
@@ -388,12 +424,17 @@ export function FloatingWindow() {
                         variant="outline"
                         size="sm"
                         className="floating-chip-button"
-                        onClick={switchToStand}
+                        onClick={() => void runAction(switchToStand)}
+                        disabled={isActionPending}
                       >
                         现在站立
                       </Button>
                     )}
                   </div>
+
+                  {actionError && (
+                    <p className="floating-error" role="alert">操作失败：{actionError}</p>
+                  )}
                 </div>
               </TabsContent>
 
@@ -412,6 +453,41 @@ export function FloatingWindow() {
                       checked={notificationsEnabled}
                       onCheckedChange={(checked) => void updateConfig({ notifications_enabled: checked })}
                       aria-label="系统通知"
+                    />
+                  </div>
+
+                  <div className="floating-setting-row floating-toggle-setting">
+                    <div className="floating-setting-copy">
+                      <Volume2 className="h-4 w-4 text-primary" />
+                      <div>
+                        <p>提醒声音</p>
+                        <span>系统通知到达时播放提示音</span>
+                      </div>
+                    </div>
+                    <Switch
+                      data-no-window-drag
+                      checked={soundEnabled}
+                      onCheckedChange={(checked) => void updateConfig({ sound_enabled: checked })}
+                      aria-label="提醒声音"
+                    />
+                  </div>
+
+                  <div className="floating-setting-row floating-toggle-setting">
+                    <div className="floating-setting-copy">
+                      <TimerReset className="h-4 w-4 text-primary" />
+                      <div>
+                        <p>自动结束站立</p>
+                        <span>站立 60 分钟后自动开始下一轮</span>
+                      </div>
+                    </div>
+                    <Switch
+                      data-no-window-drag
+                      checked={autoEndEnabled}
+                      onCheckedChange={(checked) => void updateConfig({
+                        auto_end_enabled: checked,
+                        auto_end_after_sec: 3600,
+                      })}
+                      aria-label="自动结束站立"
                     />
                   </div>
 
@@ -486,8 +562,19 @@ export function FloatingWindow() {
                   </div>
 
                   {configError && (
-                    <p className="floating-error">设置未保存：{configError}</p>
+                    <p className="floating-error" role="alert">设置未保存：{configError}</p>
                   )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="floating-chip-button"
+                    onClick={() => void invoke('quit_app')}
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    退出 StandForge
+                  </Button>
                 </div>
               </TabsContent>
 

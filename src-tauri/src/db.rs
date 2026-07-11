@@ -1,7 +1,8 @@
-use rusqlite::{Connection, Result, params};
-use chrono::{Utc, DateTime};
+use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection, Result};
 use uuid::Uuid;
-use crate::models::{StandSession, CycleConfig};
+
+use crate::models::{CycleConfig, PersistedTimerState, StandSession};
 
 pub fn get_db_path() -> String {
     let mut path = std::env::var_os("HOME")
@@ -91,10 +92,7 @@ pub fn init_db() -> Result<()> {
 
 // Session operations
 
-pub fn create_session(
-    user_id: &str,
-    device_id: &str,
-) -> Result<String> {
+pub fn create_session(user_id: &str, device_id: &str) -> Result<String> {
     let db_path = get_db_path();
     let conn = Connection::open(&db_path)?;
     let id = Uuid::new_v4().to_string();
@@ -136,23 +134,20 @@ pub fn update_session_stand_start(session_id: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn update_session_end(
-    session_id: &str,
-    end_source: &str,
-) -> Result<i64> {
+pub fn update_session_end(session_id: &str, end_source: &str) -> Result<i64> {
     let db_path = get_db_path();
     let conn = Connection::open(&db_path)?;
     let now = Utc::now();
 
     // Get actual_stand_start_at to calculate duration
-    let mut stmt = conn.prepare(
-        "SELECT actual_stand_start_at FROM stand_sessions WHERE id = ?1"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT actual_stand_start_at FROM stand_sessions WHERE id = ?1")?;
     let start_str: Option<String> = stmt.query_row(&[session_id], |row| row.get(0))?;
 
     let duration = if let Some(start_str) = start_str {
         if let Ok(start_dt) = DateTime::parse_from_rfc3339(&start_str) {
-            let duration = now.signed_duration_since(start_dt)
+            let duration = now
+                .signed_duration_since(start_dt)
                 .num_seconds()
                 .max(0);
             Some(duration)
@@ -177,6 +172,24 @@ pub fn update_session_end(
     )?;
 
     Ok(duration.unwrap_or(0))
+}
+
+pub fn finish_or_discard_session(session_id: &str, end_source: &str) -> Result<i64> {
+    let db_path = get_db_path();
+    let conn = Connection::open(&db_path)?;
+    let has_started: bool = conn.query_row(
+        "SELECT actual_stand_start_at IS NOT NULL FROM stand_sessions WHERE id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )?;
+
+    if has_started {
+        drop(conn);
+        update_session_end(session_id, end_source)
+    } else {
+        conn.execute("DELETE FROM stand_sessions WHERE id = ?1", [session_id])?;
+        Ok(0)
+    }
 }
 
 pub fn add_snooze_to_session(session_id: &str, snooze_minutes: i32) -> Result<()> {
@@ -204,7 +217,7 @@ pub fn get_session(session_id: &str) -> Result<Option<StandSession>> {
         "SELECT id, user_id, device_id, scheduled_start_at,
                 actual_stand_start_at, start_source, end_at, end_source,
                 duration_sec, snooze_count, snooze_total_sec, created_at, updated_at
-         FROM stand_sessions WHERE id = ?1"
+         FROM stand_sessions WHERE id = ?1",
     )?;
 
     let mut rows = stmt.query(&[session_id])?;
@@ -240,7 +253,7 @@ pub fn get_today_sessions(user_id: &str) -> Result<Vec<StandSession>> {
                 duration_sec, snooze_count, snooze_total_sec, created_at, updated_at
          FROM stand_sessions
          WHERE user_id = ?1 AND date(end_at, 'localtime') = date('now', 'localtime')
-         ORDER BY end_at DESC"
+         ORDER BY end_at DESC",
     )?;
 
     let mut sessions = Vec::new();
@@ -278,7 +291,7 @@ pub fn get_or_create_config(user_id: &str) -> Result<CycleConfig> {
     let mut stmt = conn.prepare(
         "SELECT user_id, sit_minutes, stand_minutes, notifications_enabled,
                 sound_enabled, auto_end_enabled, auto_end_after_sec, ui_skin, last_updated_at
-         FROM cycle_config WHERE user_id = ?1"
+         FROM cycle_config WHERE user_id = ?1",
     )?;
 
     if let Ok(row) = stmt.query_row(&[user_id], |row| {
@@ -354,5 +367,55 @@ pub fn update_config(config: &CycleConfig) -> Result<()> {
         ],
     )?;
 
+    Ok(())
+}
+
+pub fn save_timer_state(state: &PersistedTimerState) -> Result<()> {
+    let db_path = get_db_path();
+    let conn = Connection::open(&db_path)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO timer_state_persist (
+            id, status, current_session_id, current_phase,
+            phase_remaining_sec, phase_start_sec, snooze_count, updated_at
+        ) VALUES ('main', ?1, ?2, ?3, ?4, ?5, 0, ?6)",
+        params![
+            &state.status,
+            &state.current_session_id,
+            &state.current_phase,
+            state.phase_remaining_sec,
+            state.phase_start_sec,
+            &state.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn load_timer_state() -> Result<Option<PersistedTimerState>> {
+    let db_path = get_db_path();
+    let conn = Connection::open(&db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT status, current_session_id, current_phase,
+                phase_remaining_sec, phase_start_sec, updated_at
+         FROM timer_state_persist WHERE id = 'main'",
+    )?;
+    let mut rows = stmt.query([])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+
+    Ok(Some(PersistedTimerState {
+        status: row.get(0)?,
+        current_session_id: row.get(1)?,
+        current_phase: row.get(2)?,
+        phase_remaining_sec: row.get(3)?,
+        phase_start_sec: row.get(4)?,
+        updated_at: row.get(5)?,
+    }))
+}
+
+pub fn clear_timer_state() -> Result<()> {
+    let db_path = get_db_path();
+    let conn = Connection::open(&db_path)?;
+    conn.execute("DELETE FROM timer_state_persist WHERE id = 'main'", [])?;
     Ok(())
 }

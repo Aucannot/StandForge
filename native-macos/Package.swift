@@ -14,6 +14,10 @@ let package = Package(
         .executableTarget(
             name: "StandForgeMac",
             path: "Sources/StandForgeMac"
+        ),
+        .testTarget(
+            name: "StandForgeMacTests",
+            dependencies: ["StandForgeMac"]
         )
     ]
 )
