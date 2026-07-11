@@ -24,6 +24,15 @@ The app bundle is written to:
 native-macos/.build/app/StandForge Native.app
 ```
 
+Local builds use an ad-hoc signature. For a distributable Developer ID build,
+provide a signing identity and an optional notarytool keychain profile:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Example Corp (TEAMID)" \
+NOTARY_PROFILE="standforge-notary" \
+native-macos/scripts/build-app.sh
+```
+
 ## Liquid Glass behavior
 
 The SwiftUI version uses `GlassEffectContainer`, `glassEffect(_:in:)`, and the

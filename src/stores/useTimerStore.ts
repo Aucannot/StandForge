@@ -36,7 +36,7 @@ interface TimerStatePayload {
   current_session_id?: string | null;
 }
 
-function normalizeStatus(status: string): TimerState {
+export function normalizeStatus(status: string): TimerState {
   switch (status) {
     case 'standpending':
       return 'stand_pending';
@@ -171,25 +171,9 @@ export function setupTimerListeners() {
   });
 
   // Listen for phase complete events
-  listen<{ phase: string; next_phase: string }>('phase-complete', (event) => {
+  listen<{ phase: string; next_phase: string; auto_ended?: boolean }>('phase-complete', () => {
     const store = useTimerStore.getState();
-    if (event.payload.phase === 'sit') {
-      store.hydrateState({
-        status: 'stand_pending',
-        current_phase: 'stand',
-        remaining_seconds: 0,
-        total_phase_seconds: store.totalPhaseSeconds,
-        current_session_id: store.currentSessionId,
-      });
-    } else if (event.payload.phase === 'stand') {
-      store.hydrateState({
-        status: 'standing',
-        current_phase: 'stand',
-        remaining_seconds: 0,
-        total_phase_seconds: store.totalPhaseSeconds,
-        current_session_id: store.currentSessionId,
-      });
-    }
+    void store.syncState();
   }).catch(() => {
     listenersStarted = false;
   });

@@ -1,22 +1,11 @@
-use std::sync::{Arc, Mutex};
 use std::process::Command;
-use tauri::{Emitter, Manager};
-use chrono::DateTime;
-use crate::db;
+use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub enum TimerEvent {
-    TimerTick {
-        status: String,
-        current_phase: String,
-        remaining_seconds: i64,
-        total_phase_seconds: i64,
-    },
-    PhaseComplete {
-        phase: String,
-        next_phase: String,
-    },
-}
+use chrono::DateTime;
+use tauri::{Emitter, Manager};
+
+use crate::db;
+use crate::models::PersistedTimerState;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerState {
@@ -45,6 +34,18 @@ impl TimerState {
             TimerState::Paused => "paused",
         }
     }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "idle" => Some(Self::Idle),
+            "sitting" => Some(Self::Sitting),
+            "stand_pending" => Some(Self::StandPending),
+            "standing" => Some(Self::Standing),
+            "snoozed" => Some(Self::Snoozed),
+            "paused" => Some(Self::Paused),
+            _ => None,
+        }
+    }
 }
 
 impl TimerPhase {
@@ -52,6 +53,14 @@ impl TimerPhase {
         match self {
             TimerPhase::Sit => "sit",
             TimerPhase::Stand => "stand",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "sit" => Some(Self::Sit),
+            "stand" => Some(Self::Stand),
+            _ => None,
         }
     }
 }
@@ -68,6 +77,8 @@ pub struct StandTimer {
     paused_state: Arc<Mutex<Option<TimerState>>>,
     paused_remaining_sec: Arc<Mutex<i64>>,
     phase_complete_emitted: Arc<Mutex<bool>>,
+    auto_end_enabled: Arc<Mutex<bool>>,
+    auto_end_after_sec: Arc<Mutex<i64>>,
 }
 
 impl StandTimer {
@@ -83,6 +94,8 @@ impl StandTimer {
             paused_state: Arc::new(Mutex::new(None)),
             paused_remaining_sec: Arc::new(Mutex::new(0)),
             phase_complete_emitted: Arc::new(Mutex::new(false)),
+            auto_end_enabled: Arc::new(Mutex::new(false)),
+            auto_end_after_sec: Arc::new(Mutex::new(3_600)),
         }
     }
 
@@ -108,6 +121,12 @@ impl StandTimer {
         *self.phase_duration_sec.lock().unwrap()
     }
 
+    pub fn get_elapsed_seconds(&self) -> i64 {
+        (chrono::Utc::now() - *self.phase_start.lock().unwrap())
+            .num_seconds()
+            .max(0)
+    }
+
     pub fn get_current_session_id(&self) -> Option<String> {
         self.current_session_id.lock().unwrap().clone()
     }
@@ -115,6 +134,63 @@ impl StandTimer {
     pub fn set_durations(&self, sit_minutes: i64, stand_minutes: i64) {
         *self.sit_duration_sec.lock().unwrap() = sit_minutes.max(1) * 60;
         *self.stand_duration_sec.lock().unwrap() = stand_minutes.max(1) * 60;
+    }
+
+    pub fn set_auto_end(&self, enabled: bool, after_seconds: i64) {
+        *self.auto_end_enabled.lock().unwrap() = enabled;
+        *self.auto_end_after_sec.lock().unwrap() = after_seconds.max(60);
+    }
+
+    pub fn snapshot(&self) -> PersistedTimerState {
+        PersistedTimerState {
+            status: self.get_state().as_str().to_string(),
+            current_session_id: self.get_current_session_id(),
+            current_phase: self.get_current_phase().as_str().to_string(),
+            phase_remaining_sec: self.get_remaining_seconds(),
+            phase_start_sec: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    pub fn restore(&self, persisted: &PersistedTimerState) -> bool {
+        let Some(state) = TimerState::from_str(&persisted.status) else {
+            return false;
+        };
+        let Some(phase) = TimerPhase::from_str(&persisted.current_phase) else {
+            return false;
+        };
+        if state == TimerState::Idle || persisted.current_session_id.is_none() {
+            return false;
+        }
+
+        let elapsed = if state == TimerState::Paused {
+            0
+        } else {
+            (chrono::Utc::now().timestamp() - persisted.phase_start_sec).max(0)
+        };
+        let remaining = (persisted.phase_remaining_sec - elapsed).max(0);
+
+        *self.state.lock().unwrap() = state;
+        *self.current_phase.lock().unwrap() = phase;
+        *self.phase_start.lock().unwrap() =
+            chrono::Utc::now() - chrono::Duration::seconds(elapsed);
+        *self.phase_duration_sec.lock().unwrap() = persisted.phase_remaining_sec.max(0);
+        *self.current_session_id.lock().unwrap() = persisted.current_session_id.clone();
+        *self.paused_state.lock().unwrap() = if state == TimerState::Paused {
+            Some(match phase {
+                TimerPhase::Sit => TimerState::Sitting,
+                TimerPhase::Stand => TimerState::Standing,
+            })
+        } else {
+            None
+        };
+        *self.paused_remaining_sec.lock().unwrap() = if state == TimerState::Paused {
+            remaining
+        } else {
+            0
+        };
+        *self.phase_complete_emitted.lock().unwrap() = false;
+        true
     }
 
     pub fn start_sitting(&self, session_id: String) {
@@ -141,16 +217,6 @@ impl StandTimer {
         *self.current_phase.lock().unwrap() = TimerPhase::Stand;
         *self.phase_start.lock().unwrap() = chrono::Utc::now();
         *self.phase_duration_sec.lock().unwrap() = *self.stand_duration_sec.lock().unwrap();
-        *self.paused_state.lock().unwrap() = None;
-        *self.paused_remaining_sec.lock().unwrap() = 0;
-        *self.phase_complete_emitted.lock().unwrap() = false;
-    }
-
-    pub fn confirm_sit(&self) {
-        *self.state.lock().unwrap() = TimerState::Idle;
-        *self.current_session_id.lock().unwrap() = None;
-        *self.current_phase.lock().unwrap() = TimerPhase::Sit;
-        *self.phase_duration_sec.lock().unwrap() = 0;
         *self.paused_state.lock().unwrap() = None;
         *self.paused_remaining_sec.lock().unwrap() = 0;
         *self.phase_complete_emitted.lock().unwrap() = false;
@@ -209,16 +275,6 @@ impl StandTimer {
         *self.phase_complete_emitted.lock().unwrap() = false;
     }
 
-    pub fn switch_to_sit(&self) {
-        *self.state.lock().unwrap() = TimerState::Sitting;
-        *self.current_phase.lock().unwrap() = TimerPhase::Sit;
-        *self.phase_start.lock().unwrap() = chrono::Utc::now();
-        *self.phase_duration_sec.lock().unwrap() = *self.sit_duration_sec.lock().unwrap();
-        *self.paused_state.lock().unwrap() = None;
-        *self.paused_remaining_sec.lock().unwrap() = 0;
-        *self.phase_complete_emitted.lock().unwrap() = false;
-    }
-
     pub fn update(&self, app: &tauri::AppHandle) -> bool {
         let state = self.get_state();
         if state == TimerState::Idle {
@@ -240,6 +296,34 @@ impl StandTimer {
             return true;
         }
 
+        if state == TimerState::Standing {
+            let auto_end_enabled = *self.auto_end_enabled.lock().unwrap();
+            let auto_end_after_sec = *self.auto_end_after_sec.lock().unwrap();
+            if auto_end_enabled && self.get_elapsed_seconds() >= auto_end_after_sec {
+                if let Some(session_id) = self.get_current_session_id() {
+                    let _ = db::update_session_end(&session_id, "auto_end");
+                }
+                if let Ok(next_session_id) = db::create_session("default_user", "this_mac") {
+                    self.start_next_sitting(next_session_id);
+                    let _ = db::save_timer_state(&self.snapshot());
+                } else {
+                    self.stop();
+                    let _ = db::clear_timer_state();
+                }
+                show_timer_notification(
+                    "站立已自动结束",
+                    "已达到自动结束时长",
+                    "下一轮屏幕使用计时已开始。",
+                );
+                app.emit_to("floating", "phase-complete", serde_json::json!({
+                    "phase": "stand",
+                    "next_phase": "sit",
+                    "auto_ended": true
+                })).ok();
+                return true;
+            }
+        }
+
         // Check if phase is complete
         if remaining <= 0 {
             let mut emitted = self.phase_complete_emitted.lock().unwrap();
@@ -252,6 +336,7 @@ impl StandTimer {
             match state {
                 TimerState::Sitting => {
                     self.transition_to_stand_pending();
+                    let _ = db::save_timer_state(&self.snapshot());
                     show_timer_notification(
                         "站立提醒",
                         "屏幕使用时间已到",
@@ -278,6 +363,7 @@ impl StandTimer {
                 TimerState::Snoozed => {
                     // Return to pending state after snooze
                     self.transition_to_stand_pending();
+                    let _ = db::save_timer_state(&self.snapshot());
                     show_timer_notification(
                         "站立提醒",
                         "延后时间到了",
@@ -337,5 +423,67 @@ fn show_floating_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_pause_resume_and_stop_preserve_expected_state() {
+        let timer = StandTimer::new(45, 15);
+        timer.start_sitting("session-1".to_string());
+        assert_eq!(timer.get_state(), TimerState::Sitting);
+        assert_eq!(timer.get_current_phase(), TimerPhase::Sit);
+        assert_eq!(timer.get_current_session_id().as_deref(), Some("session-1"));
+
+        timer.pause();
+        let paused_remaining = timer.get_remaining_seconds();
+        assert_eq!(timer.get_state(), TimerState::Paused);
+
+        timer.resume();
+        assert_eq!(timer.get_state(), TimerState::Sitting);
+        assert!(timer.get_remaining_seconds() <= paused_remaining);
+
+        timer.stop();
+        assert_eq!(timer.get_state(), TimerState::Idle);
+        assert_eq!(timer.get_current_session_id(), None);
+    }
+
+    #[test]
+    fn restore_uses_wall_clock_elapsed_time() {
+        let timer = StandTimer::new(45, 15);
+        let persisted = PersistedTimerState {
+            status: "sitting".to_string(),
+            current_session_id: Some("session-2".to_string()),
+            current_phase: "sit".to_string(),
+            phase_remaining_sec: 10,
+            phase_start_sec: chrono::Utc::now().timestamp() - 5,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        assert!(timer.restore(&persisted));
+        assert_eq!(timer.get_state(), TimerState::Sitting);
+        assert!((4..=5).contains(&timer.get_remaining_seconds()));
+    }
+
+    #[test]
+    fn paused_restore_does_not_consume_elapsed_time() {
+        let timer = StandTimer::new(45, 15);
+        let persisted = PersistedTimerState {
+            status: "paused".to_string(),
+            current_session_id: Some("session-3".to_string()),
+            current_phase: "stand".to_string(),
+            phase_remaining_sec: 120,
+            phase_start_sec: chrono::Utc::now().timestamp() - 300,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        assert!(timer.restore(&persisted));
+        assert_eq!(timer.get_state(), TimerState::Paused);
+        assert_eq!(timer.get_remaining_seconds(), 120);
+        timer.resume();
+        assert_eq!(timer.get_state(), TimerState::Standing);
     }
 }

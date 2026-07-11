@@ -23,7 +23,7 @@ interface ConfigStore {
 
   // Actions
   loadConfig: () => Promise<void>;
-  updateConfig: (updates: Partial<CycleConfig>) => Promise<void>;
+  updateConfig: (updates: Partial<CycleConfig>) => Promise<boolean>;
 }
 
 export const useConfigStore = create<ConfigStore>((set, get) => ({
@@ -43,16 +43,18 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
 
   updateConfig: async (updates) => {
     const current = get().config;
-    if (!current) return;
+    if (!current) return false;
 
     const updated = { ...current, ...updates };
     set({ config: updated, error: null });
 
     try {
       await invoke('update_config_command', { config: updated });
+      return true;
     } catch (e) {
       // Revert on error
       set({ config: current, error: String(e) });
+      return false;
     }
   },
 }));

@@ -12,6 +12,9 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 5173,
@@ -26,7 +29,11 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/src-tauri/**",
+        "**/native-macos/.build/**",
+        "**/native-macos/build/**",
+      ],
     },
   },
 }));
