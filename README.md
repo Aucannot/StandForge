@@ -1,3 +1,5 @@
+
+
 # StandForge
 
 StandForge is a small macOS/Tauri app that runs a background sitting timer and pops up a reminder when you have used the screen for too long.
@@ -43,7 +45,7 @@ Run the native macOS Liquid Glass version with:
 npm run mac:native:run
 ```
 
-Build the native macOS `.app` bundle with:
+Ensure the build script is executable (`chmod +x native-macos/scripts/build-app.sh`), then build the native macOS `.app` bundle with:
 
 ```bash
 npm run mac:native:build
